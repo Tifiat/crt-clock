@@ -15,7 +15,9 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QElapsedTimer>
-#include <QFontComboBox>
+#include <QComboBox>
+#include <QFontDatabase>
+#include <QScrollArea>
 #include <QLocale>
 #include <QLineF>
 #include <QPainterPath>
@@ -30,6 +32,7 @@
 #include "crt_style.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "pet_tail.hpp"
 #include "matrix_rain.hpp"
 #include <QDir>
 #include <QFileInfo>
@@ -85,7 +88,10 @@ QString configFile() {
 
 struct Settings {
     perspective::Handles quad;
-    QString font = QStringLiteral("IBM Plex Mono");
+    QString clockFont = QStringLiteral("IBM Plex Mono");
+    QString petFont = QStringLiteral("IBM Plex Mono");
+    int petFontSize = 43;
+    int petStroke = 25;
     QString pet = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     QColor green = QColor("#B0FFBB");
     QColor dim = QColor("#70BB8A");
@@ -95,6 +101,7 @@ struct Settings {
     bool scanlines = true;
     int glow = 44;
     int scanlineStrength = 32;
+    int scanlineSpeed = 55;
     int grilleStrength = 35;
     int rippleStrength = 24;
     int brightness = 84;
@@ -125,7 +132,14 @@ struct Settings {
             quad[i].setX(s.value(QString("quad/x%1").arg(i), defaults[i].x()).toDouble());
             quad[i].setY(s.value(QString("quad/y%1").arg(i), defaults[i].y()).toDouble());
         }
-        font = s.value("appearance/font", font).toString();
+        // Backward compatibility: a single v0.5 font is migrated to both fields.
+        const QString previousFont = s.value("appearance/font", clockFont).toString();
+        clockFont = s.value("appearance/clock_font", previousFont).toString();
+        petFont = s.value("appearance/pet_font", previousFont).toString();
+        petFontSize = std::clamp(s.value("appearance/pet_font_size", petFontSize).toInt(), 30, 54);
+        petStroke = std::clamp(s.value("appearance/pet_stroke", petStroke).toInt(), 0, 100);
+        if (clockFont.trimmed().isEmpty()) clockFont = QStringLiteral("IBM Plex Mono");
+        if (petFont.trimmed().isEmpty()) petFont = clockFont;
         pet = s.value("appearance/pet", pet).toString();
         green = QColor(s.value("appearance/primary", green.name()).toString());
         dim = QColor(s.value("appearance/secondary", dim.name()).toString());
@@ -135,6 +149,7 @@ struct Settings {
         scanlines = s.value("appearance/scanlines", scanlines).toBool();
         glow = std::clamp(s.value("appearance/glow", glow).toInt(), 0, 100);
         scanlineStrength = std::clamp(s.value("appearance/scanline_strength", scanlineStrength).toInt(), 0, 100);
+        scanlineSpeed = std::clamp(s.value("appearance/scanline_speed", scanlineSpeed).toInt(), 0, 100);
         grilleStrength = std::clamp(s.value("appearance/grille_strength", grilleStrength).toInt(), 0, 100);
         rippleStrength = std::clamp(s.value("appearance/ripple_strength", rippleStrength).toInt(), 0, 100);
         brightness = std::clamp(s.value("appearance/brightness", brightness).toInt(), 25, 100);
@@ -155,7 +170,10 @@ struct Settings {
             s.setValue(QString("quad/x%1").arg(i), quad[i].x());
             s.setValue(QString("quad/y%1").arg(i), quad[i].y());
         }
-        s.setValue("appearance/font", font);
+        s.setValue("appearance/clock_font", clockFont);
+        s.setValue("appearance/pet_font", petFont);
+        s.setValue("appearance/pet_font_size", petFontSize);
+        s.setValue("appearance/pet_stroke", petStroke);
         s.setValue("appearance/pet", pet);
         s.setValue("appearance/primary", green.name());
         s.setValue("appearance/secondary", dim.name());
@@ -165,6 +183,7 @@ struct Settings {
         s.setValue("appearance/scanlines", scanlines);
         s.setValue("appearance/glow", glow);
         s.setValue("appearance/scanline_strength", scanlineStrength);
+        s.setValue("appearance/scanline_speed", scanlineSpeed);
         s.setValue("appearance/grille_strength", grilleStrength);
         s.setValue("appearance/ripple_strength", rippleStrength);
         s.setValue("appearance/brightness", brightness);
@@ -186,17 +205,17 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
+QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, const pet::JoyTail &tail) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
     text.setRenderHint(QPainter::Antialiasing, true);
     text.setRenderHint(QPainter::TextAntialiasing, true);
 
-    QFont time(cfg.font);
+    QFont time(cfg.clockFont);
     time.setPixelSize(97);
     time.setWeight(QFont::Bold);
-    QFont date(cfg.font);
+    QFont date(cfg.clockFont);
     date.setPixelSize(32);
     date.setWeight(QFont::Bold);
     const auto now = QDateTime::currentDateTime();
@@ -211,7 +230,8 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
-    pet::paint(text, QRectF(10, 217, 460, 82), cfg.font, cfg.pet, pose, petColor);
+    pet::paint(text, QRectF(10, 217, 460, 82), cfg.petFont,
+               cfg.pet, pose, petColor, cfg.petFontSize, cfg.petStroke, tail);
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -269,16 +289,22 @@ public:
 
         const bool typing = cfg_.typingResponse && keyboard_->recentlyTyping(now);
         bool dirty = animator_.advance(now, typing, cfg_.musicResponse && musicPlaying_);
+        const bool joyful = cfg_.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ") &&
+                           pet::hasJoyfulEyes(pet::frame(animator_.pose()));
+        dirty = joyTail_.advance(now, joyful) || dirty;
         const quint64 count = keyboard_->pressCount();
         if (count > keyPressCount_) {
-            // Cap a huge burst after a stalled UI tick; never record key values.
-            const quint64 newPresses = std::min<quint64>(count - keyPressCount_, 64);
-            for (quint64 i = 0; i < newPresses; ++i)
-                matrix_.addPress(now);
+            // Each detected press creates one decorative glyph, not the typed
+            // character. Respect the user's typing-response toggle.
+            if (cfg_.typingResponse) {
+                const quint64 newPresses = std::min<quint64>(count - keyPressCount_, 64);
+                for (quint64 i = 0; i < newPresses; ++i)
+                    matrix_.addPress(now);
+            }
             keyPressCount_ = count;
         }
         if (matrix_.advance(now, typing)) {
-            matrixFrame_ = matrix_.image();
+            rebuildMatrix();
             update();
         }
 
@@ -312,7 +338,7 @@ public:
             rippleDue_ = now + QRandomGenerator::global()->bounded(9000, 17000);
         }
         if (rippleStart_ >= 0) {
-            if (now - rippleStart_ > 700) rippleStart_ = -1;
+            if (now - rippleStart_ > perspective::sweepDurationMs(cfg_.scanlineSpeed)) rippleStart_ = -1;
             update();
         }
         if (dirty) redraw();
@@ -332,10 +358,15 @@ public:
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setAttribute(Qt::WA_QuitOnClose, false);
         dialog->setWindowTitle("CRT Clock / Settings");
-        dialog->resize(370, 380);
+        dialog->resize(470, 595);
         auto *layout = new QVBoxLayout(dialog);
-        auto *form = new QFormLayout();
-        layout->addLayout(form);
+        auto *scroll = new QScrollArea(dialog);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        auto *fields = new QWidget(scroll);
+        auto *form = new QFormLayout(fields);
+        scroll->setWidget(fields);
+        layout->addWidget(scroll, 1);
 
         auto addSlider = [this, dialog, form](const QString &label, int initial,
                                               int lower, int upper, auto setter) {
@@ -358,8 +389,10 @@ public:
 
         addSlider("Phosphor glow", cfg_.glow, 0, 100,
                   [](Settings &s, int x) { s.glow = x; });
-        addSlider("Scanlines", cfg_.scanlineStrength, 0, 100,
+        addSlider("Static scanline strength", cfg_.scanlineStrength, 0, 100,
                   [](Settings &s, int x) { s.scanlineStrength = x; s.scanlines = x > 0; });
+        addSlider("Moving scanline speed (slow to fast)", cfg_.scanlineSpeed, 0, 100,
+                  [](Settings &s, int x) { s.scanlineSpeed = x; });
         addSlider("Phosphor aperture grille", cfg_.grilleStrength, 0, 100,
                   [](Settings &s, int x) { s.grilleStrength = x; });
         addSlider("Signal ripple", cfg_.rippleStrength, 0, 100,
@@ -404,12 +437,34 @@ public:
             redraw();
         });
 
-        auto *fontMenu = new QFontComboBox(dialog);
-        fontMenu->setFontFilters(QFontComboBox::MonospacedFonts);
-        fontMenu->setCurrentFont(QFont(cfg_.font));
-        form->addRow("Font", fontMenu);
-        connect(fontMenu, &QFontComboBox::currentFontChanged, dialog,
-                [this](const QFont &f) { cfg_.font = f.family(); redraw(); });
+        // QFontComboBox with MonospacedFonts used to discard font family
+        // names not classified as fixed pitch by Qt/fontconfig. Use the full
+        // installed family list, editable for newly installed or custom fonts.
+        auto addFont = [this, dialog, form](const QString &label, QString initial,
+                                            auto setter) {
+            auto *combo = new QComboBox(dialog);
+            combo->setEditable(true);
+            combo->setInsertPolicy(QComboBox::NoInsert);
+            combo->addItems(QFontDatabase::families());
+            combo->setCurrentText(initial);
+            combo->setToolTip("All installed font families. You can also type a family name. "
+                              "Restart CRT Clock to refresh fonts installed while it was running.");
+            form->addRow(label, combo);
+            connect(combo, &QComboBox::currentTextChanged, dialog,
+                    [this, setter](const QString &family) {
+                        if (family.trimmed().isEmpty()) return;
+                        setter(cfg_, family);
+                        redraw();
+                    });
+        };
+        addFont("Clock and date font", cfg_.clockFont,
+                [](Settings &s, const QString &f) { s.clockFont = f; });
+        addFont("Pet font", cfg_.petFont,
+                [](Settings &s, const QString &f) { s.petFont = f; });
+        addSlider("Pet font size (px)", cfg_.petFontSize, 30, 54,
+                  [](Settings &s, int x) { s.petFontSize = x; });
+        addSlider("Pet stroke thickness", cfg_.petStroke, 0, 100,
+                  [](Settings &s, int x) { s.petStroke = x; });
 
         auto *calibrate = new QPushButton("Edit 9 calibration handles (Super+Shift+C)", dialog);
         form->addRow(calibrate);
@@ -467,7 +522,8 @@ protected:
         perspective::grille(p, cfg_.quad, origin, cfg_.grilleStrength);
         perspective::ripple(p, cfg_.quad, origin,
                              rippleStart_ < 0 ? -1.0 :
-                               (elapsed_.elapsed() - rippleStart_) / 700.0,
+                               (elapsed_.elapsed() - rippleStart_) /
+                               double(perspective::sweepDurationMs(cfg_.scanlineSpeed)),
                              cfg_.rippleStrength);
         if (!editing_) return;
         QPolygonF to = perspective::outline(cfg_.quad);
@@ -481,7 +537,7 @@ protected:
             p.setBrush(i == selected_ ? QColor("#FFFFA1") : QColor("#7BFFAA"));
             p.drawEllipse(point, i < 4 ? 10 : 8, i < 4 ? 10 : 8);
             p.setPen(QColor("#102A1C"));
-            QFont f(cfg_.font); f.setPixelSize(12); f.setBold(true);
+            QFont f(cfg_.clockFont); f.setPixelSize(12); f.setBold(true);
             p.setFont(f);
             p.drawText(QRectF(point.x()-10, point.y()-10, 20, 20),
                        Qt::AlignCenter, QString::number(i+1));
@@ -492,7 +548,7 @@ protected:
         p.setBrush(selected_ == 8 ? QColor("#FFFFA1") : QColor("#FFCA82"));
         p.drawEllipse(move, 13, 13);
         p.setPen(QColor("#102A1C"));
-        QFont handleFont(cfg_.font); handleFont.setPixelSize(12); handleFont.setBold(true);
+        QFont handleFont(cfg_.clockFont); handleFont.setPixelSize(12); handleFont.setBold(true);
         p.setFont(handleFont);
         p.drawText(QRectF(move.x()-12, move.y()-12, 24, 24),
                    Qt::AlignCenter, QStringLiteral("9"));
@@ -501,7 +557,7 @@ protected:
         p.setBrush(QColor(5, 24, 15, 230));
         p.drawRoundedRect(top, 5, 5);
         p.setPen(QColor("#B0FFBB"));
-        QFont f(cfg_.font); f.setPixelSize(15); p.setFont(f);
+        QFont f(cfg_.clockFont); f.setPixelSize(15); p.setFont(f);
         p.drawText(top.adjusted(12, 6, -6, -6), Qt::AlignLeft | Qt::TextWordWrap,
             QStringLiteral("CRT-CLOCK / КАЛИБРОВКА\n"
                            "8 крайних: деформация • центр 9: перенос • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
@@ -575,8 +631,22 @@ protected:
     }
 
 private:
+    void rebuildMatrix() {
+        if (matrix_.active()) {
+            const QImage glyphs = matrix_.image(cfg_.green, cfg_.brightness);
+            // Run the same pixel scale and phosphor glow as the clock/pet.
+            // Static scanlines, aperture grille and ripple are shared by both
+            // layers in paintEvent after the perspective transformation.
+            matrixFrame_ = crtComposite(glyphs, Qt::transparent, 0,
+                                         cfg_.glow, cfg_.pixelScale, false,
+                                         cfg_.dim);
+        } else {
+            matrixFrame_ = QImage();
+        }
+    }
     void redraw() {
-        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_);
+        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_);
+        if (matrix_.active()) rebuildMatrix();
         update();
     }
     void applyMode() {
@@ -600,6 +670,7 @@ private:
     perspective::Handles before_{};
     QImage frame_;
     MatrixRain matrix_;
+    pet::JoyTail joyTail_;
     QImage matrixFrame_;
     QTimer tick_;
     QElapsedTimer elapsed_;
