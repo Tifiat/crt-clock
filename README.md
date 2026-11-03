@@ -4,12 +4,16 @@ A lightweight **Qt 6 / X11 desktop widget** that perspective-maps a clock, date,
 
 Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader required.
 
+![CRT Clock on an Arch Linux XFCE desktop](docs/screenshots/desktop.png)
+
 ## Features
 
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
 - **Animated pet:** idle expressions, continuous joyful-eye tail wag, MPRIS music dances, and typing reactions. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
 - **Desktop integration:** XFCE/X11 all-workspace hints (including reassertion after settings changes) and optional XDG autostart, with a right-click settings menu.
+
+![CRT Clock display close-up](docs/screenshots/closeup.png)
 
 **Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, and clock-flicker frequency (0 = off, 100 = about every 4 seconds). Font pickers list installed fonts and accept a typed family.
 
@@ -39,9 +43,9 @@ Requires Qt 6 and X11; `makepkg` installs package dependencies.
 
 ### Perspective calibration
 
-![Exaggerated perspective example showing eight independent warp handles and a center move handle](docs/calibration.svg)
+![Nine-point perspective calibration on a real desktop wallpaper monitor](docs/screenshots/calibration.png)
 
-The diagram exaggerates the tilt to show what each control does. The actual overlay is fitted manually to the monitor in your wallpaper.
+The eight edge/corner handles deform the overlay; the center handle moves it.
 
 Settings are stored in `~/.config/crt-clock/config.ini` and survive updates.
 
@@ -74,4 +78,3 @@ Pet frames, animation sequences, and rendering are separate modules. See [animat
 
 Session startup, X11 workspace behavior, and settings migration: [desktop integration](docs/DESKTOP_INTEGRATION.md).
 
-Real desktop screenshots will replace illustrative imagery when available. See the [capture checklist](docs/SCREENSHOT_PLAN.md).
