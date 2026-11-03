@@ -9,9 +9,9 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
 - **Animated pet:** idle expressions, continuous joyful-eye tail wag, MPRIS music dances, and typing reactions. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
-- **Desktop integration:** stays on all workspaces where supported by the window manager, with a right-click settings menu.
+- **Desktop integration:** XFCE/X11 all-workspace hints and optional XDG autostart, with a right-click settings menu.
 
-**Appearance:** choose clock/date and pet fonts independently, adjust pet size/stroke thickness and the moving-scanline speed in Settings. The font pickers accept any installed font family or a manually typed name.
+**Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, and clock-flicker frequency (0 = off, 100 = about every 4 seconds). Font pickers list installed fonts and accept a typed family.
 
 ## Install (Arch Linux)
 
@@ -44,6 +44,8 @@ Requires Qt 6 and X11; `makepkg` installs package dependencies.
 The diagram exaggerates the tilt to show what each control does. The actual overlay is fitted manually to the monitor in your wallpaper.
 
 Settings are stored in `~/.config/crt-clock/config.ini` and survive updates.
+
+To launch the widget at login, enable **Start CRT Clock automatically at login** in Settings. This creates `~/.config/autostart/crt-clock.desktop` for the current user; no system service is installed. Disable the checkbox to remove it. The workspace option sends EWMH sticky/all-desktops hints to the X11 window manager.
 
 ## Update
 
