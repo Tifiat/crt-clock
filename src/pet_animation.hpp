@@ -60,10 +60,9 @@ inline Story idleStory(IdleAction action) {
             return {{H00, 500},{H02, 650},{H01, 650},
                     {H02, 650},{H00, 1050}};
         case IdleAction::Celebrate:
-            return {{F00, 600},{F04, 950},
-                    {JoyTailLeft, 175},{JoyTailRight, 175},
-                    {JoyTailLeft, 175},{JoyTailRight, 175},
-                    {F16, 750},{F04, 850},{F00, 1000}};
+            // Hold the happy face longer. JoyTail independently wags for
+            // as long as any story displays the joyful > < eyes.
+            return {{F00, 600},{F04, 1650},{F16, 750},{F04, 850},{F00, 1000}};
         case IdleAction::Indignant:
             return {{F00, 500},{F12, 850},{F05, 650},{F12, 700},{F00, 1000}};
     }
