@@ -1,38 +1,52 @@
 #include <QPointF>
 #include <QString>
 #include <array>
-#include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include "pet_animation.hpp"
 #include "pet_poses.hpp"
 #include "perspective.hpp"
 
+static void require(bool condition, const char *message) {
+    if (!condition) {
+        std::cerr << "FAILED: " << message << '\n';
+        std::exit(1);
+    }
+}
 static void close(double a, double b) {
-    assert(std::abs(a-b) < .001);
+    require(std::abs(a-b) < .001, "coordinates differ");
 }
 
 int main() {
     const QString original = QStringLiteral("(づ｡◕‿‿◕｡)づ");
-    assert(pet::glyph(0, original) == original);
-    assert(pet::glyph(9, original).contains(QStringLiteral("●")));
-    assert(!pet::glyph(13, original).isEmpty());
+    require(pet::glyph(0, original) == original, "canonical pose changed");
+    require(pet::glyph(9, original).contains(QStringLiteral("●")), "tail missing");
+    require(pet::parts(13).typing && pet::parts(15).typing, "typing indicator missing");
 
-    // Explicit priority contract: typing > music > idle.
+    // Every non-typing story is a complete action lasting several seconds.
+    for (int n=0; n<7; ++n)
+        require(pet::duration(pet::idleStory(static_cast<pet::IdleAction>(n))) >= 2400,
+                "idle action too short");
+    for (int n=0; n<5; ++n)
+        require(pet::duration(pet::musicStory(static_cast<pet::MusicAction>(n))) >= 3000,
+                "music action too short");
+    require(pet::duration(pet::typingStory()) < 600, "typing response too slow");
+
+    // Priority: typing > music > idle, even when an idle story is active.
     pet::Animator animator;
     animator.advance(1000, true, true);
-    assert(animator.activity() == pet::Activity::Typing);
-    assert(animator.pose() == 13);
+    require(animator.activity() == pet::Activity::Typing, "typing priority");
+    require(animator.pose() == 13, "typing starts immediately");
     animator.advance(1400, false, true);
-    assert(animator.activity() == pet::Activity::Music);
-    assert(animator.pose() == 11);
+    require(animator.activity() == pet::Activity::Music, "music resumes after typing");
     animator.advance(1900, true, true);
-    assert(animator.activity() == pet::Activity::Typing);
+    require(animator.activity() == pet::Activity::Typing, "typing interrupts music");
     animator.advance(2000, false, false);
-    assert(animator.activity() == pet::Activity::Idle);
-    assert(animator.pose() == 0);
+    require(animator.activity() == pet::Activity::Idle, "idle restored");
+    require(animator.pose() == 0, "neutral idle pose");
 
-    // v0.2 four-corner settings map to the new eight-handle rectangle.
+    // Old four-corner configs still get exactly four derived edge midpoints.
     const std::array<QPointF,4> old{
         QPointF(0, 0), QPointF(300, 0),
         QPointF(300, 200), QPointF(0, 200)
@@ -48,5 +62,12 @@ int main() {
     close(center.x(), 150);
     close(center.y(), 100);
 
-    std::cout << "core geometry and pet priority checks passed\n";
+    // Moving the central handle translates every corner/edge equally.
+    const QPointF offset(13, -9);
+    for (auto &handle : handles) handle += offset;
+    for (int n=0; n<8; ++n) {
+        close(handles[n].x(), perspective::fromCorners(old)[n].x()+13);
+        close(handles[n].y(), perspective::fromCorners(old)[n].y()-9);
+    }
+    std::cout << "CRT core tests passed\n";
 }

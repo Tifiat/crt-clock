@@ -29,6 +29,7 @@
 #include <QList>
 #include "crt_style.hpp"
 #include "pet_poses.hpp"
+#include "pet_render.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QFontMetricsF>
@@ -38,6 +39,8 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMouseEvent>
+#include <QContextMenuEvent>
+#include <QMenu>
 #include <QPainter>
 #include <QPolygonF>
 #include <QRandomGenerator>
@@ -50,10 +53,30 @@
 #include <algorithm>
 #include <array>
 #include <unistd.h>
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
 
 namespace {
 constexpr int W = 480;
 constexpr int H = 320;
+
+// Request XFCE/X11 to show the desktop widget on all workspaces.
+void keepOnEveryDesktop(WId window) {
+    Display *display = XOpenDisplay(nullptr);
+    if (!display) return;
+    const Atom desktop = XInternAtom(display, "_NET_WM_DESKTOP", False);
+    XEvent event{};
+    event.xclient.type = ClientMessage;
+    event.xclient.window = static_cast<Window>(window);
+    event.xclient.message_type = desktop;
+    event.xclient.format = 32;
+    event.xclient.data.l[0] = 0xFFFFFFFFL;
+    event.xclient.data.l[1] = 1;
+    XSendEvent(display, DefaultRootWindow(display), False,
+               SubstructureNotifyMask | SubstructureRedirectMask, &event);
+    XFlush(display);
+    XCloseDisplay(display);
+}
 
 QString configFile() {
     return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
@@ -71,7 +94,9 @@ struct Settings {
     bool frame = false;
     bool scanlines = true;
     int glow = 44;
-    int scanlineStrength = 24;
+    int scanlineStrength = 32;
+    int grilleStrength = 35;
+    int rippleStrength = 24;
     int brightness = 84;
     bool musicResponse = true;
     bool typingResponse = true;
@@ -110,6 +135,8 @@ struct Settings {
         scanlines = s.value("appearance/scanlines", scanlines).toBool();
         glow = std::clamp(s.value("appearance/glow", glow).toInt(), 0, 100);
         scanlineStrength = std::clamp(s.value("appearance/scanline_strength", scanlineStrength).toInt(), 0, 100);
+        grilleStrength = std::clamp(s.value("appearance/grille_strength", grilleStrength).toInt(), 0, 100);
+        rippleStrength = std::clamp(s.value("appearance/ripple_strength", rippleStrength).toInt(), 0, 100);
         brightness = std::clamp(s.value("appearance/brightness", brightness).toInt(), 25, 100);
         musicResponse = s.value("pet/music_response", musicResponse).toBool();
         typingResponse = s.value("pet/typing_response", typingResponse).toBool();
@@ -138,6 +165,8 @@ struct Settings {
         s.setValue("appearance/scanlines", scanlines);
         s.setValue("appearance/glow", glow);
         s.setValue("appearance/scanline_strength", scanlineStrength);
+        s.setValue("appearance/grille_strength", grilleStrength);
+        s.setValue("appearance/ripple_strength", rippleStrength);
         s.setValue("appearance/brightness", brightness);
         s.setValue("pet/music_response", musicResponse);
         s.setValue("pet/typing_response", typingResponse);
@@ -157,7 +186,7 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
+QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, quint64 pressCount) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -169,21 +198,7 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
     time.setWeight(QFont::Bold);
     QFont date(cfg.font);
     date.setPixelSize(32);
-    date.setWeight(QFont::Medium);
-    QFont petFont(cfg.font);
-    petFont.setPixelSize(45);
-
-    // One shared font size for every animation pose. Never shrink the pet
-    // when a wider frame appears; that previously made it jump and deform.
-    while (petFont.pixelSize() > 19) {
-        QFontMetricsF metrics(petFont);
-        qreal widest = metrics.horizontalAdvance(cfg.pet);
-        for (int i = 1; i <= 17; ++i)
-            widest = std::max(widest, metrics.horizontalAdvance(pet::glyph(i, cfg.pet)));
-        if (widest <= 446) break;
-        petFont.setPixelSize(petFont.pixelSize() - 1);
-    }
-
+    date.setWeight(QFont::Bold);
     const auto now = QDateTime::currentDateTime();
     QColor timeColor = cfg.green;
     timeColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
@@ -196,7 +211,8 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
-    centered(text, QRectF(10, 217, 460, 82), pet::glyph(pose, cfg.pet), petFont, petColor);
+    pet::paint(text, QRectF(10, 217, 460, 82), cfg.font,
+               cfg.pet, pose, petColor, static_cast<unsigned>(pressCount % 12));
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -236,6 +252,7 @@ public:
         elapsed_.start();
         keyboard_ = std::make_unique<KeyboardActivity>([this] { edit(); });
         flickerDue_ = QRandomGenerator::global()->bounded(55000, 85000);
+        rippleDue_ = QRandomGenerator::global()->bounded(6500, 12000);
         connect(&tick_, &QTimer::timeout, this, [this] { updateState(); });
         tick_.start(40);
         redraw();
@@ -253,6 +270,11 @@ public:
 
         const bool typing = cfg_.typingResponse && keyboard_->recentlyTyping(now);
         bool dirty = animator_.advance(now, typing, cfg_.musicResponse && musicPlaying_);
+        const quint64 count = keyboard_->pressCount();
+        if (count != keyPressCount_) {
+            keyPressCount_ = count;
+            dirty = true; // Change the single Japanese glyph on every new press.
+        }
 
         // Rare two-pulse phosphor flicker affects CLOCK only, not the pet.
         double intensity = 1.0;
@@ -278,6 +300,15 @@ public:
             lastMinute_ = stamp;
             dirty = true;
         }
+        // Draw only the occasional ripple band; no expensive canvas rebuild.
+        if (cfg_.rippleStrength > 0 && now >= rippleDue_) {
+            rippleStart_ = now;
+            rippleDue_ = now + QRandomGenerator::global()->bounded(9000, 17000);
+        }
+        if (rippleStart_ >= 0) {
+            if (now - rippleStart_ > 700) rippleStart_ = -1;
+            update();
+        }
         if (dirty) redraw();
     }
 
@@ -293,6 +324,7 @@ public:
         auto *dialog = new QDialog(nullptr);
         settingsWindow_ = dialog;
         dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setAttribute(Qt::WA_QuitOnClose, false);
         dialog->setWindowTitle("CRT Clock / Settings");
         dialog->resize(370, 380);
         auto *layout = new QVBoxLayout(dialog);
@@ -322,6 +354,10 @@ public:
                   [](Settings &s, int x) { s.glow = x; });
         addSlider("Scanlines", cfg_.scanlineStrength, 0, 100,
                   [](Settings &s, int x) { s.scanlineStrength = x; s.scanlines = x > 0; });
+        addSlider("Phosphor aperture grille", cfg_.grilleStrength, 0, 100,
+                  [](Settings &s, int x) { s.grilleStrength = x; });
+        addSlider("Signal ripple", cfg_.rippleStrength, 0, 100,
+                  [](Settings &s, int x) { s.rippleStrength = x; });
         addSlider("Text brightness", cfg_.brightness, 25, 100,
                   [](Settings &s, int x) { s.brightness = x; });
         addSlider("Pixel / raster size", cfg_.pixelScale, 1, 4,
@@ -369,7 +405,7 @@ public:
         connect(fontMenu, &QFontComboBox::currentFontChanged, dialog,
                 [this](const QFont &f) { cfg_.font = f.family(); redraw(); });
 
-        auto *calibrate = new QPushButton("Edit 8 perspective points (Super+Shift+C)", dialog);
+        auto *calibrate = new QPushButton("Edit 9 calibration handles (Super+Shift+C)", dialog);
         form->addRow(calibrate);
         connect(calibrate, &QPushButton::clicked, dialog, [this, dialog] {
             // Commit appearance values before closing settings so Cancel in the
@@ -421,6 +457,11 @@ protected:
         perspective::draw(p, frame_, cfg_.quad, origin);
         perspective::scanlines(p, cfg_.quad, origin,
                               cfg_.scanlines ? cfg_.scanlineStrength : 0);
+        perspective::grille(p, cfg_.quad, origin, cfg_.grilleStrength);
+        perspective::ripple(p, cfg_.quad, origin,
+                             rippleStart_ < 0 ? -1.0 :
+                               (elapsed_.elapsed() - rippleStart_) / 700.0,
+                             cfg_.rippleStrength);
         if (!editing_) return;
         QPolygonF to = perspective::outline(cfg_.quad);
         for (QPointF &point : to) point -= origin;
@@ -438,6 +479,16 @@ protected:
             p.drawText(QRectF(point.x()-10, point.y()-10, 20, 20),
                        Qt::AlignCenter, QString::number(i+1));
         }
+        // Nine handles: eight independent contour points and one translation handle.
+        const QPointF move = perspective::center(cfg_.quad) - origin;
+        p.setPen(QPen(QColor("#102A1C"), 2));
+        p.setBrush(selected_ == 8 ? QColor("#FFFFA1") : QColor("#FFCA82"));
+        p.drawEllipse(move, 13, 13);
+        p.setPen(QColor("#102A1C"));
+        QFont handleFont(cfg_.font); handleFont.setPixelSize(12); handleFont.setBold(true);
+        p.setFont(handleFont);
+        p.drawText(QRectF(move.x()-12, move.y()-12, 24, 24),
+                   Qt::AlignCenter, QStringLiteral("9"));
         QRect top(14, 14, std::min(width()-28, 890), 80);
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(5, 24, 15, 230));
@@ -446,12 +497,18 @@ protected:
         QFont f(cfg_.font); f.setPixelSize(15); p.setFont(f);
         p.drawText(top.adjusted(12, 6, -6, -6), Qt::AlignLeft | Qt::TextWordWrap,
             QStringLiteral("CRT-CLOCK / КАЛИБРОВКА\n"
-                           "8 точек: углы и середины сторон • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
+                           "8 крайних: деформация • центр 9: перенос • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
     }
 
     void mousePressEvent(QMouseEvent *e) override {
         if (!editing_ || e->button() != Qt::LeftButton) return;
         QPointF pt = e->position() + QPointF(geometry().topLeft());
+        if (QLineF(pt, perspective::center(cfg_.quad)).length() < 20) {
+            selected_ = 8;
+            last_ = pt;
+            update();
+            return;
+        }
         for (int i = 0; i < 8; ++i) {
             if (QLineF(pt, cfg_.quad[i]).length() < 20) {
                 selected_ = i;
@@ -460,18 +517,14 @@ protected:
                 return;
             }
         }
-        QPolygonF polygon = perspective::outline(cfg_.quad);
-        if (polygon.containsPoint(pt, Qt::OddEvenFill)) {
-            selected_ = 4; // Drag entire quad.
-            last_ = pt;
-        }
+        // Only the center handle translates the whole widget.
     }
     void mouseMoveEvent(QMouseEvent *e) override {
         if (!editing_ || selected_ < 0) return;
         QPointF pt = e->position() + QPointF(geometry().topLeft());
         QPointF clamped(std::clamp(pt.x(), qreal(screen_.left()+2), qreal(screen_.right()-2)),
                         std::clamp(pt.y(), qreal(screen_.top()+2), qreal(screen_.bottom()-2)));
-        if (selected_ < 4) cfg_.quad[selected_] = clamped;
+        if (selected_ < 8) cfg_.quad[selected_] = clamped;
         else {
             QPointF delta = clamped - last_;
             bool fits = true;
@@ -484,6 +537,19 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent *e) override {
         if (e->button() == Qt::LeftButton) selected_ = -1;
+    }
+    void contextMenuEvent(QContextMenuEvent *e) override {
+        if (editing_) return;
+        QMenu menu(this);
+        auto *settingsAction = menu.addAction(QStringLiteral("Настройки CRT"));
+        auto *calibrateAction = menu.addAction(QStringLiteral("Калибровка перспективы"));
+        menu.addSeparator();
+        auto *quitAction = menu.addAction(QStringLiteral("Закрыть виджет"));
+        QAction *selected = menu.exec(e->globalPos());
+        if (selected == settingsAction) settings();
+        else if (selected == calibrateAction) edit();
+        else if (selected == quitAction) QApplication::quit();
+        e->accept();
     }
     void keyPressEvent(QKeyEvent *e) override {
         if (!editing_) return;
@@ -503,7 +569,7 @@ protected:
 
 private:
     void redraw() {
-        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_);
+        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, keyPressCount_);
         update();
     }
     void applyMode() {
@@ -511,13 +577,14 @@ private:
         Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint;
         if (editing_) flags |= Qt::WindowStaysOnTopHint;
         else flags |= Qt::WindowDoesNotAcceptFocus |
-                      Qt::WindowTransparentForInput | Qt::WindowStaysOnBottomHint;
+                      Qt::WindowStaysOnBottomHint;
         setWindowFlags(flags);
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
         setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
         setGeometry(editing_ ? screen_ : bounds(cfg_));
         show();
+        QTimer::singleShot(0, this, [this] { keepOnEveryDesktop(winId()); });
         if (editing_) { raise(); activateWindow(); setFocus(); }
     }
 
@@ -531,7 +598,10 @@ private:
     pet::Animator animator_;
     QPointF last_;
     int selected_ = -1;
+    quint64 keyPressCount_ = 0;
     qint64 nextMusicCheck_ = 0;
+    qint64 rippleDue_ = 10000;
+    qint64 rippleStart_ = -1;
     qint64 flickerDue_ = 60000;
     qint64 flickerStart_ = -1;
     double clockIntensity_ = 1.0;
@@ -545,6 +615,7 @@ private:
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName("crt-clock");
+    app.setQuitOnLastWindowClosed(false);
 
     const QStringList args = app.arguments();
     const QString command = args.contains("--calibrate") ? "calibrate"

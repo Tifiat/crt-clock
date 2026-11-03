@@ -14,6 +14,7 @@ public:
 
     void poll(qint64 monotonicMs);
     bool recentlyTyping(qint64 monotonicMs) const;
+    quint64 pressCount() const;
 
 private:
     struct Impl;
