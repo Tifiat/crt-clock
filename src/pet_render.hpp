@@ -1,27 +1,31 @@
 #pragma once
 
 #include "pet_poses.hpp"
+#include "pet_tail.hpp"
 #include <QFont>
 #include <QPainter>
 #include <QRectF>
+#include <algorithm>
 
-// Presentation only. Pose data and scenario scheduling live elsewhere.
-// The native canvas, glyph cells, font size, anchors and stroke thickness do
-// not vary by pose: only explicitly authored head/body movements are allowed.
+// Renderer only: fixed columns, a user-selected font/size and stroke density
+// shared by every pose. Never auto-fit individual Unicode characters.
 namespace pet {
 
 inline void paint(QPainter &p, const QRectF &area, const QString &family,
-                  const QString &original, int poseId, QColor color) {
+                  const QString &original, int poseId, QColor color,
+                  int fontPixels, int strokeStrength, const JoyTail &tail) {
+    const int thickness = std::clamp(strokeStrength, 0, 100);
     QFont font(family);
-    font.setPixelSize(kFontPixels);
-    font.setWeight(QFont::Black);
+    font.setPixelSize(std::clamp(fontPixels, 30, 54));
+    font.setWeight(static_cast<QFont::Weight>(
+        std::clamp(400 + thickness * 3, 400, 700)));
     font.setKerning(false);
     p.setFont(font);
     p.setPen(color);
 
     const QString canonical = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     if (original != canonical) {
-        // Preserve user-provided custom strings without adaptive rescaling.
+        // User-supplied glyph: fixed font parameters, no animated built-in pose.
         p.drawText(area, Qt::AlignCenter | Qt::TextSingleLine, original);
         return;
     }
@@ -34,11 +38,16 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
                       - (pose.typing ? 20 : 0) + pose.bodyDx;
     const qreal top = area.top() + pose.bodyDy;
 
-    // In source resolution, these four subpixel offsets thicken the outline,
-    // but never scale the pet or alter the advance of any character.
-    static constexpr qreal offsets[5][2] = {
-        {0.0, 0.0}, {0.8, 0.0}, {-0.8, 0.0}, {0.0, 0.8}, {0.0, -0.8}
+    // The default is deliberately lighter than the previous five impressions.
+    // Changing thickness never alters the font's size or the cell positions.
+    static constexpr qreal offsets[][2] = {
+        {0, 0}, {0.42, 0}, {-0.42, 0},
+        {0, 0.55}, {0, -0.55}, {0.8, 0}, {-0.8, 0}
     };
+    const int strokes = thickness < 20 ? 1 :
+                        thickness < 35 ? 2 :
+                        thickness < 55 ? 3 :
+                        thickness < 80 ? 5 : 7;
     for (int column = 0; column < columns; ++column) {
         const bool face = !pose.back && column >= 2 && column <= 7;
         const QRectF slot(left + column * cell + (face ? pose.headDx : 0),
@@ -46,20 +55,21 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
                           cell, area.height());
         const QString letter(pose.line.at(column));
         if (letter == QStringLiteral(" ")) continue;
-        for (const auto &offset : offsets)
-            p.drawText(slot.translated(offset[0], offset[1]),
+        for (int i = 0; i < strokes; ++i)
+            p.drawText(slot.translated(offsets[i][0], offsets[i][1]),
                        Qt::AlignCenter | Qt::TextSingleLine, letter);
     }
 
-    // Front-tail decoration is independent of the ten text columns.
-    // Only the two explicit joy frames enable it; the backside wag is unchanged.
-    if (pose.frontTail) {
+    // The joyful dot is attached to the body, between the closing bracket
+    // and right paw, NOT beyond the paw as it was in v0.5.1.
+    if (!pose.back && tail.visible()) {
         p.save();
         p.setPen(Qt::NoPen);
         p.setBrush(color);
-        const QPointF tailCenter(left + width + 9 + pose.tailDx,
-                                 area.center().y() + 13 + pose.tailDy);
-        p.drawEllipse(tailCenter, 4.8, 4.8);
+        const QPointF center(left + width - cell * 1.2 + tail.side() * 4.0,
+                             area.center().y() + pose.bodyDy + 16 +
+                             tail.side() * 2.0);
+        p.drawEllipse(center, 4.3, 4.3);
         p.restore();
     }
 }
