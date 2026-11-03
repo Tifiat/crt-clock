@@ -6,6 +6,7 @@
 #include <iostream>
 #include "pet_animation.hpp"
 #include "pet_poses.hpp"
+#include "pet_render.hpp"
 #include "perspective.hpp"
 
 static void require(bool condition, const char *message) {
@@ -19,10 +20,26 @@ static void close(double a, double b) {
 }
 
 int main() {
+    // Deterministic layout contract: every single frame is exactly ten cells.
     const QString original = QStringLiteral("(づ｡◕‿‿◕｡)づ");
-    require(pet::glyph(0, original) == original, "canonical pose changed");
-    require(pet::glyph(9, original).contains(QStringLiteral("●")), "tail missing");
-    require(pet::parts(13).typing && pet::parts(15).typing, "typing indicator missing");
+    require(pet::frame(0).line == original, "canonical pose changed");
+    require(pet::kColumns == 10 && pet::kCellPixels == 40 && pet::kFontPixels == 38,
+            "fixed layout constants changed");
+    for (int id = 0; id <= 25; ++id) {
+        const pet::Pose frame = pet::frame(id);
+        require(frame.line.size() == pet::kColumns, "variable length pose");
+        require(frame.line.at(0) == QChar('('), "left anchor changed");
+        require(frame.line.at(1) != QChar(' '), "left arm missing");
+        require(frame.line.at(2) == QChar(0xFF61), "left face anchor changed");
+        require(frame.line.at(7) == QChar(0xFF61), "right face anchor changed");
+        require(frame.line.at(8) == QChar(')'), "right anchor changed");
+        require(frame.headDx >= -3 && frame.headDx <= 3, "horizontal head movement too large");
+        require(frame.headDy >= -3 && frame.headDy <= 3, "vertical head movement too large");
+        require(frame.bodyDy >= -3 && frame.bodyDy <= 3, "vertical body movement too large");
+    }
+    require(pet::frame(9).tailOffset != pet::frame(10).tailOffset, "tail does not wag");
+    require(pet::frame(13).typing && pet::frame(14).typing &&
+            pet::frame(15).typing, "typing indicator missing");
 
     // Every non-typing story is a complete action lasting several seconds.
     for (int n=0; n<7; ++n)
