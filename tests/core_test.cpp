@@ -62,6 +62,31 @@ int main() {
     for (int id = pet::T00; id <= pet::T02; ++id)
         require(pet::frame(id).typing, "typing activity pose missing");
 
+    // Front-tail joy is a separate illustration at a fixed position.
+    // It must not change ten-slot text or affect the existing back-facing dance.
+    require(pet::kPoseCount == 39, "joy pose catalog size");
+    const auto joyLeft = pet::frame(pet::JoyTailLeft);
+    const auto joyRight = pet::frame(pet::JoyTailRight);
+    require(joyLeft.frontTail && joyRight.frontTail, "joy tail not enabled");
+    require(!joyLeft.back && !joyRight.back, "joy is still front-facing");
+    require(joyLeft.line == pet::frame(pet::F04).line &&
+            joyRight.line == pet::frame(pet::F04).line,
+            "joy tails must not alter the happy face");
+    require(joyLeft.tailDx < joyRight.tailDx &&
+            joyLeft.tailDy < joyRight.tailDy, "joy tail does not wag");
+    for (int id = 0; id < pet::JoyTailLeft; ++id)
+        require(!pet::frame(id).frontTail, "tail leaked into another activity");
+
+    const auto celebration = pet::idleStory(pet::IdleAction::Celebrate);
+    require(pet::duration(celebration) == 4850,
+            "celebration must be extended by exactly 700ms");
+    require(celebration.size() == 9, "expected four quick wagging frames");
+    for (int i = 0; i < 4; ++i)
+        require(celebration[i + 2].pose ==
+                    (i % 2 == 0 ? pet::JoyTailLeft : pet::JoyTailRight) &&
+                    celebration[i + 2].durationMs == 175,
+                "joy wag needs two alternating cycles");
+
     // Every idle and music story is complete, in range, and returns to neutral.
     for (int n = 0; n < pet::kIdleActionCount; ++n) {
         const auto story = pet::idleStory(static_cast<pet::IdleAction>(n));

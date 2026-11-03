@@ -50,5 +50,17 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
             p.drawText(slot.translated(offset[0], offset[1]),
                        Qt::AlignCenter | Qt::TextSingleLine, letter);
     }
+
+    // Front-tail decoration is independent of the ten text columns.
+    // Only the two explicit joy frames enable it; the backside wag is unchanged.
+    if (pose.frontTail) {
+        p.save();
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+        const QPointF tailCenter(left + width + 9 + pose.tailDx,
+                                 area.center().y() + 13 + pose.tailDy);
+        p.drawEllipse(tailCenter, 4.8, 4.8);
+        p.restore();
+    }
 }
 } // namespace pet
