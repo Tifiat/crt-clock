@@ -9,7 +9,7 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
 - **Animated pet:** idle expressions, continuous joyful-eye tail wag, MPRIS music dances, and typing reactions. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
-- **Desktop integration:** XFCE/X11 all-workspace hints and optional XDG autostart, with a right-click settings menu.
+- **Desktop integration:** XFCE/X11 all-workspace hints (including reassertion after settings changes) and optional XDG autostart, with a right-click settings menu.
 
 **Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, and clock-flicker frequency (0 = off, 100 = about every 4 seconds). Font pickers list installed fonts and accept a typed family.
 
