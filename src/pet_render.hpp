@@ -2,12 +2,9 @@
 
 #include "pet_poses.hpp"
 #include <QFont>
-#include <QFontMetricsF>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRectF>
-#include <array>
-#include <algorithm>
 #include <initializer_list>
 
 namespace pet {
@@ -94,84 +91,52 @@ inline void drawKanji(QPainter &p, QRectF rect, unsigned int index, QColor color
     p.restore();
 }
 
+// Native canvas is 480x320. Ten static cells: no font measuring, no
+// shrinking, no variable-width layout, no recentering across animations.
 inline void paint(QPainter &p, QRectF area, const QString &family,
                   const QString &original, int pose, QColor color,
                   unsigned int keyIndex) {
-    const Parts part = parts(pose);
-    const QString canonical = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     QFont font(family);
-    font.setPixelSize(46);
+    font.setPixelSize(kFontPixels);
+    font.setKerning(false);
+    p.setFont(font);
+    p.setPen(color);
 
-    // Arbitrary configured pets still draw normally. The fixed-slot layout
-    // applies to the built-in ASCII companion.
+    const QString canonical = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     if (original != canonical) {
-        while (font.pixelSize() > 19 &&
-               QFontMetricsF(font).horizontalAdvance(original) > area.width() - 30)
-            font.setPixelSize(font.pixelSize()-1);
-        p.setPen(color);
-        p.setFont(font);
+        // Legacy custom string: draw at fixed size, without auto-fitting.
         p.drawText(area, Qt::AlignCenter | Qt::TextSingleLine, original);
-    } else {
-        std::array<qreal, 9> widths{};
-        qreal fullWidth = 0;
-        while (true) {
-            const QFontMetricsF m(font);
-            const qreal arm = std::max({m.horizontalAdvance(QStringLiteral("づ")),
-                m.horizontalAdvance(QStringLiteral("っ")),
-                m.horizontalAdvance(QStringLiteral("ヽ")),
-                m.horizontalAdvance(QStringLiteral("ヾ")),
-                m.horizontalAdvance(QStringLiteral("ﾉ"))});
-            const qreal eye = std::max({m.horizontalAdvance(QStringLiteral("◕")),
-                m.horizontalAdvance(QStringLiteral("◔")),
-                m.horizontalAdvance(QStringLiteral("－")),
-                m.horizontalAdvance(QStringLiteral("O")),
-                m.horizontalAdvance(QStringLiteral(">"))});
-            const qreal mouth = std::max(m.horizontalAdvance(QStringLiteral("‿‿")),
-                                         m.horizontalAdvance(QStringLiteral("ᴗᴗ")));
-            widths = {m.horizontalAdvance(QStringLiteral("(")), arm,
-                      m.horizontalAdvance(QStringLiteral("｡")), eye, mouth, eye,
-                      m.horizontalAdvance(QStringLiteral("｡")),
-                      m.horizontalAdvance(QStringLiteral(")")), arm};
-            fullWidth = 0;
-            for (const auto width : widths) fullWidth += width;
-            if (fullWidth <= area.width()-40 || font.pixelSize() <= 20) break;
-            font.setPixelSize(font.pixelSize()-1);
-        }
-
-        const QFontMetricsF metrics(font);
-        const qreal height = metrics.height()+6;
-        const qreal top = area.center().y() - height/2;
-        qreal x = area.center().x() - fullWidth/2 - (part.typing ? 20 : 0);
-        const std::array<QString,9> segments = {
-            QStringLiteral("("), part.leftArm, QStringLiteral("｡"),
-            part.leftEye, part.mouth, part.rightEye, QStringLiteral("｡"),
-            QStringLiteral(")"), part.rightArm
-        };
-        p.setFont(font);
-        p.setPen(color);
-        for (int i=0; i<9; ++i) {
-            const int face = (i>=2 && i<=6);
-            const qreal dx = face ? part.headDx : 0;
-            const qreal dy = part.bodyDy + (face ? part.headDy : 0);
-            p.drawText(QRectF(x+dx, top+dy, widths[i], height),
-                       Qt::AlignCenter | Qt::TextSingleLine, segments[i]);
-            x += widths[i];
-        }
-        if (part.tailSide) {
-            p.save();
-            p.setPen(Qt::NoPen);
-            p.setBrush(color);
-            const QPointF tail(area.center().x() + fullWidth*.29 -
-                                   (part.typing ? 20 : 0) + part.tailSide*2,
-                               top + height*.77 + (part.tailSide < 0 ? -1 : 1));
-            p.drawEllipse(tail, 4.5, 4.5);
-            p.restore();
-        }
+        return;
     }
 
-    if (part.typing) {
-        // Japanese key-activity indicator stays in its own fixed slot.
-        drawKanji(p, QRectF(area.right()-31, area.center().y()-15, 23, 29),
+    const Pose action = frame(pose);
+    const qreal gridWidth = kColumns * kCellPixels;
+    const qreal left = area.center().x() - gridWidth / 2 - (action.typing ? 20 : 0);
+    const qreal top = area.top();
+
+    for (int column = 0; column < kColumns; ++column) {
+        // Positions are constant. Only explicitly animated face/body offsets vary.
+        const bool face = column >= 2 && column <= 7;
+        const qreal x = left + column * kCellPixels + (face ? action.headDx : 0);
+        const qreal y = top + action.bodyDy + (face ? action.headDy : 0);
+        p.drawText(QRectF(x, y, kCellPixels, area.height()),
+                   Qt::AlignCenter | Qt::TextSingleLine,
+                   QString(action.line.at(column)));
+    }
+
+    if (action.tailOffset) {
+        p.save();
+        p.setPen(Qt::NoPen);
+        p.setBrush(color);
+        const qreal tailX = left + gridWidth - 42 + action.tailOffset;
+        const qreal tailY = area.center().y() + 18;
+        p.drawEllipse(QPointF(tailX, tailY), 4.5, 4.5);
+        p.restore();
+    }
+
+    if (action.typing) {
+        // Independent permanent indicator slot; no font fallback and no reflow.
+        drawKanji(p, QRectF(area.right() - 31, area.center().y() - 15, 23, 29),
                   keyIndex, color);
     }
 }

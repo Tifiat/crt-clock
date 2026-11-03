@@ -32,7 +32,6 @@
 #include "pet_render.hpp"
 #include <QDir>
 #include <QFileInfo>
-#include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QImage>
 #include <QKeyEvent>
