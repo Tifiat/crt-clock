@@ -30,7 +30,7 @@ public:
                 drop.targetY -= Cell;
         }
         drops_.append({column, glyph, qreal(BaseY), qreal(BaseY)});
-        lastTick_ = nowMs;
+        if (lastTick_ < 0) lastTick_ = nowMs;
         changed_ = true;
     }
 
