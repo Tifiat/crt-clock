@@ -94,7 +94,9 @@ struct Settings {
     bool frame = false;
     bool scanlines = true;
     int glow = 44;
-    int scanlineStrength = 24;
+    int scanlineStrength = 32;
+    int grilleStrength = 35;
+    int rippleStrength = 24;
     int brightness = 84;
     bool musicResponse = true;
     bool typingResponse = true;
@@ -133,6 +135,8 @@ struct Settings {
         scanlines = s.value("appearance/scanlines", scanlines).toBool();
         glow = std::clamp(s.value("appearance/glow", glow).toInt(), 0, 100);
         scanlineStrength = std::clamp(s.value("appearance/scanline_strength", scanlineStrength).toInt(), 0, 100);
+        grilleStrength = std::clamp(s.value("appearance/grille_strength", grilleStrength).toInt(), 0, 100);
+        rippleStrength = std::clamp(s.value("appearance/ripple_strength", rippleStrength).toInt(), 0, 100);
         brightness = std::clamp(s.value("appearance/brightness", brightness).toInt(), 25, 100);
         musicResponse = s.value("pet/music_response", musicResponse).toBool();
         typingResponse = s.value("pet/typing_response", typingResponse).toBool();
@@ -161,6 +165,8 @@ struct Settings {
         s.setValue("appearance/scanlines", scanlines);
         s.setValue("appearance/glow", glow);
         s.setValue("appearance/scanline_strength", scanlineStrength);
+        s.setValue("appearance/grille_strength", grilleStrength);
+        s.setValue("appearance/ripple_strength", rippleStrength);
         s.setValue("appearance/brightness", brightness);
         s.setValue("pet/music_response", musicResponse);
         s.setValue("pet/typing_response", typingResponse);
@@ -246,6 +252,7 @@ public:
         elapsed_.start();
         keyboard_ = std::make_unique<KeyboardActivity>([this] { edit(); });
         flickerDue_ = QRandomGenerator::global()->bounded(55000, 85000);
+        rippleDue_ = QRandomGenerator::global()->bounded(6500, 12000);
         connect(&tick_, &QTimer::timeout, this, [this] { updateState(); });
         tick_.start(40);
         redraw();
@@ -293,6 +300,15 @@ public:
             lastMinute_ = stamp;
             dirty = true;
         }
+        // Draw only the occasional ripple band; no expensive canvas rebuild.
+        if (cfg_.rippleStrength > 0 && now >= rippleDue_) {
+            rippleStart_ = now;
+            rippleDue_ = now + QRandomGenerator::global()->bounded(9000, 17000);
+        }
+        if (rippleStart_ >= 0) {
+            if (now - rippleStart_ > 700) rippleStart_ = -1;
+            update();
+        }
         if (dirty) redraw();
     }
 
@@ -338,6 +354,10 @@ public:
                   [](Settings &s, int x) { s.glow = x; });
         addSlider("Scanlines", cfg_.scanlineStrength, 0, 100,
                   [](Settings &s, int x) { s.scanlineStrength = x; s.scanlines = x > 0; });
+        addSlider("Phosphor aperture grille", cfg_.grilleStrength, 0, 100,
+                  [](Settings &s, int x) { s.grilleStrength = x; });
+        addSlider("Signal ripple", cfg_.rippleStrength, 0, 100,
+                  [](Settings &s, int x) { s.rippleStrength = x; });
         addSlider("Text brightness", cfg_.brightness, 25, 100,
                   [](Settings &s, int x) { s.brightness = x; });
         addSlider("Pixel / raster size", cfg_.pixelScale, 1, 4,
@@ -437,6 +457,11 @@ protected:
         perspective::draw(p, frame_, cfg_.quad, origin);
         perspective::scanlines(p, cfg_.quad, origin,
                               cfg_.scanlines ? cfg_.scanlineStrength : 0);
+        perspective::grille(p, cfg_.quad, origin, cfg_.grilleStrength);
+        perspective::ripple(p, cfg_.quad, origin,
+                             rippleStart_ < 0 ? -1.0 :
+                               (elapsed_.elapsed() - rippleStart_) / 700.0,
+                             cfg_.rippleStrength);
         if (!editing_) return;
         QPolygonF to = perspective::outline(cfg_.quad);
         for (QPointF &point : to) point -= origin;
@@ -575,6 +600,8 @@ private:
     int selected_ = -1;
     quint64 keyPressCount_ = 0;
     qint64 nextMusicCheck_ = 0;
+    qint64 rippleDue_ = 10000;
+    qint64 rippleStart_ = -1;
     qint64 flickerDue_ = 60000;
     qint64 flickerStart_ = -1;
     double clockIntensity_ = 1.0;
