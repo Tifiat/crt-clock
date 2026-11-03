@@ -1,5 +1,7 @@
 #pragma once
 
+#include "pet_sequence.hpp"
+
 #include <QRandomGenerator>
 #include <QVector>
 #include <QtGlobal>
@@ -10,6 +12,8 @@ namespace pet {
 enum class Activity { Idle, Music, Typing };
 enum class IdleAction { Blink, Curious, Wave, Stretch, Nap, Sway, Surprise };
 enum class MusicAction { HeadNod, TailWag, ArmWave, SideStep, Bounce };
+constexpr int kIdleActionCount = 7;
+constexpr int kMusicActionCount = 5;
 
 struct Frame {
     int pose;
@@ -93,8 +97,7 @@ public:
         }
 
         if (activity_ == Activity::Idle && story_.isEmpty() && nowMs >= idleDue_) {
-            const auto action = static_cast<IdleAction>(
-                QRandomGenerator::global()->bounded(7));
+            const auto action = static_cast<IdleAction>(idleCycle_.next());
             begin(idleStory(action), nowMs);
         }
 
@@ -124,10 +127,8 @@ public:
 
 private:
     void nextMusic(qint64 nowMs) {
-        // Pick among the four OTHER dances, so two adjacent dances never repeat.
-        const int offset = QRandomGenerator::global()->bounded(1, 5);
-        lastMusicAction_ = (lastMusicAction_ + offset) % 5;
-        begin(musicStory(static_cast<MusicAction>(lastMusicAction_)), nowMs);
+        // Each music action appears once per shuffled cycle.
+        begin(musicStory(static_cast<MusicAction>(musicCycle_.next())), nowMs);
     }
 
     void begin(Story sequence, qint64 nowMs) {
@@ -146,7 +147,8 @@ private:
     int frameIndex_ = 0;
     int pose_ = 0;
     int lastPose_ = -1;
-    int lastMusicAction_ = -1;
+    ShuffleBag musicCycle_{kMusicActionCount};
+    ShuffleBag idleCycle_{kIdleActionCount};
     qint64 nextFrame_ = 0;
     qint64 idleDue_ = 8500;
 };
