@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="270" viewBox="0 0 1040 270">
+<rect width="1040" height="270" rx="12" fill="#0a1c15"/>
+<text x="27" y="38" font-family="monospace" font-size="18" fill="#aaf1ac">PET / BEHAVIOR PRIORITIES</text>
+<g font-family="monospace" text-anchor="middle">
+<rect x="35" y="73" width="298" height="125" rx="9" fill="#17432e" stroke="#aaf1ac" stroke-width="2"/>
+<text x="184" y="103" fill="#aaf1ac" font-size="17">1  TYPING</text>
+<text x="184" y="137" fill="#b4cebe" font-size="16">(づ｡◕‿‿◕｡)づ_</text>
+<text x="184" y="171" fill="#6d9785" font-size="13">interrupts music</text>
+<rect x="373" y="73" width="298" height="125" rx="9" fill="#143727" stroke="#54866c" stroke-width="2"/>
+<text x="522" y="103" fill="#aaf1ac" font-size="17">2  MUSIC</text>
+<text x="522" y="137" fill="#b4cebe" font-size="16">ᕦ( ● )ᕤ</text>
+<text x="522" y="171" fill="#6d9785" font-size="13">fast turn + tail wag</text>
+<rect x="711" y="73" width="298" height="125" rx="9" fill="#10291e" stroke="#426e53" stroke-width="2"/>
+<text x="860" y="103" fill="#aaf1ac" font-size="17">3  IDLE</text>
+<text x="860" y="137" fill="#b4cebe" font-size="16">(づ｡－‿‿－｡)づ</text>
+<text x="860" y="171" fill="#6d9785" font-size="13">blink • wave • stretch • nap</text>
+</g>
+<g stroke="#aaf1ac" stroke-width="2"><path d="M334 137 H373 M664 137 H710"/></g>
+<text x="27" y="241" fill="#6d9785" font-family="monospace" font-size="13">No content of pressed keys is recorded. MPRIS state only, no audio capture.</text>
+</svg>

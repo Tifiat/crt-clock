@@ -18,7 +18,7 @@ pkgver() {
 
 build() {
   cmake -S "$srcdir/crt-clock" -B "$srcdir/build" \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF
   cmake --build "$srcdir/build" --parallel 2
 }
 

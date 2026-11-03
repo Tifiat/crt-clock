@@ -371,7 +371,13 @@ public:
 
         auto *calibrate = new QPushButton("Edit 8 perspective points (Super+Shift+C)", dialog);
         form->addRow(calibrate);
-        connect(calibrate, &QPushButton::clicked, dialog, [this] { edit(); });
+        connect(calibrate, &QPushButton::clicked, dialog, [this, dialog] {
+            // Commit appearance values before closing settings so Cancel in the
+            // old dialog cannot undo a newly saved eight-point calibration.
+            cfg_.save();
+            dialog->accept();
+            edit();
+        });
 
         auto *colorButton = new QPushButton("Text color…", dialog);
         form->addRow(colorButton);

@@ -1,58 +1,102 @@
 # CRT Clock
 
-A small **native C++20 / Qt 6** clock, date and ASCII companion for **Arch Linux + XFCE/X11**. Its content is perspective-mapped to the angled screen of a computer in the wallpaper. Other applications are never transformed.
+![CRT Clock illustrative preview](docs/preview.svg)
 
-## First installation (as a regular user)
+**Лёгкий виджет с перспективой для Arch Linux + XFCE/X11.** Часы, дата и символьный питомец размещаются непосредственно на наклонённом экране компьютера из обоев. Остальные окна не искажаются.
+
+> Макет в заголовке — иллюстрация, а не скриншот программы. Финальный скриншот рабочего стола добавим отдельно, когда он будет готов.
+
+## Установка
 
 ```bash
-sudo pacman -S --needed base-devel git
 git clone https://github.com/Tifiat/crt-clock.git
 cd crt-clock
 makepkg -si
 ```
 
-To update: `cd crt-clock && git pull --ff-only && makepkg -si`.
+Сборка через официальный Arch `makepkg`, без Python, Electron, WebView или фонового браузера. Требуются Qt 6 и X11, зависимости устанавливаются пакетным менеджером.
 
-## Controls
+**Обновление:**
 
 ```bash
-crt-clock                # start; a second invocation won't create a duplicate
-crt-clock --calibrate    # open calibration overlay
-crt-clock --settings     # CRT effect sliders and companion settings
-crt-clock --quit         # stop
+cd ~/crt-clock
+git pull --ff-only
+makepkg -si
+crt-clock --quit
+crt-clock >/dev/null 2>&1 &
 ```
 
-**Calibration:** Move the numbered corner handles to the screen corners in the wallpaper. Drag *inside* the quadrilateral to move all four points. **Enter** saves, **Esc** cancels, **B** toggles dark background, **F** toggles border. In normal mode the clock is click-through and requests below-other-windows placement.
+Файл пользовательских настроек сохраняется при переустановке.
 
-**Important:** first launch uses a generic rectangle. Use `crt-clock --calibrate` to fit the screen in your wallpaper. Calibration uses an interactive full-screen overlay only while configuring; **Esc** always exits edit mode.
+## Управление
 
-## Style and configuration
+| Команда / клавиша | Действие |
+|---|---|
+| `crt-clock` | Запустить один экземпляр |
+| `crt-clock --calibrate` | Режим восьмиточечной калибровки |
+| `Super+Shift+C` | Та же калибровка глобальной клавишей в X11 |
+| `crt-clock --settings` | Настройки CRT-графики |
+| `crt-clock --quit` | Завершить |
+| **Enter / Esc** | Сохранить / отменить калибровку |
+| **B / F** | В калибровке переключить фон / рамку |
 
-Settings are stored after first calibration in `~/.config/crt-clock/config.ini`:
+Автозапуск **намеренно не включается при установке**. Когда результат устроит, добавь команду `crt-clock` в XFCE → **Settings → Session and Startup → Application Autostart**.
 
-- `[quad]` x0/y0 ... x3/y3 (top-left, top-right, bottom-right, bottom-left)
-- `[appearance]` font=IBM Plex Mono
-- `primary=#b0ffbb`, `secondary=#70bb8a`, `background=#092419`
-- `background_alpha=35` (0 is fully transparent), `scanlines=true`, `border=false`
-- `pet=(づ｡◕‿‿◕｡)づ` is the original main pose
+## Настройка перспективы
 
-No Python, Electron, WebView or telemetry. The clock renders a small image every second and transforms only this image.
+![8 handles perspective](docs/calibration.svg)
 
-**No autostart is installed by default.** After testing, add `crt-clock` to XFCE → Settings → Session and Startup → Application Autostart.
+**Точки 1–4** соответствуют углам экрана, **5–8** — серединам сторон. Все восемь перетаскиваются независимо; внутри области можно перетащить сразу весь виджет. Используется сетка из четырёх проективно преобразованных участков. Старые значения четырёх углов из v0.2 автоматически сохраняются, новые середины сначала вычисляются из них.
 
+В обычном режиме: прозрачное для кликов окно, без рамки, без кнопки в панели задач.
 
-## v0.2 CRT appearance and pet behavior
+## CRT-графика
 
-- `crt-clock --settings` opens **native Qt sliders** for phosphor glow, scanline strength, text brightness, backing opacity and color. Border and music behavior are optional.
-- Changes preview live; Save writes `~/.config/crt-clock/config.ini`; Cancel restores the prior state. Your calibrated `[quad]` coordinates are never overwritten by appearance changes.
-- Visual rendering is offscreen at 480×320, and the resulting image alone is perspective-mapped. Two low-resolution soft glows, scanlines and a mild vignette approximate phosphor on the wallpaper monitor. No GPU shader, browser or continuous 60 FPS rendering.
-- The pet keeps its original normal expression. Other states: blink, wave, turn around, simple bunny-tail wag, and dance.
-- When **MPRIS** reports a player in `Playing` state (including AIMP if its MPRIS interface is enabled), the pet dances. No microphone monitoring or sound capture. Polling every five seconds. If MPRIS does not expose AIMP, the pet continues idle animations.
-- In calibration mode `Enter` saves, `Esc` cancels; `crt-clock --settings` works independently.
+В `crt-clock --settings` доступны яркость, зелёный цвет, свечение, **реальные сканирующие линии в пикселях экрана**, пикселизация символов, прозрачность фона, двойное редкое мерцание часов и отключаемая рамка.
 
-## Limitations and testing
+Программа рисует внутреннее изображение 480×320, затем накладывает перспективу **только на него**. Не используется глобальный шейдер на весь экран. Реальная нагрузка зависит от композитора XFCE и требует проверки на ноутбуке.
 
-- The initial 4 corners are approximate, not matched to your wallpaper until calibration.
-- Projective drawing and X11 window stacking are implemented, but require a test on the user's XFCE compositor.
-- Fallback font rendering may affect rare Unicode glyphs.
-- Animation uses low-frequency states; music synchronization depends on player MPRIS support. The backside and tail poses are preliminary and can be refined.
+## Питомец
+
+![Pet behavior priorities](docs/behavior.svg)
+
+Оригинальная базовая поза — `(づ｡◕‿‿◕｡)づ`. Пропорции и размер шрифта фиксированы между кадрами, чтобы лицо не сжималось при смене выражения.
+
+Приоритеты строго определены: **печать → музыка → idle**.
+
+| Режим | Поведение |
+|---|---|
+| **Typing** | При печати в любом окне короткие движения лапками. Реакция прекращается после паузы около 1 секунды, содержимое клавиш не читается и не сохраняется |
+| **Music** | При воспроизведении в MPRIS-плеере быстрый танец, разворот, круглый заячий хвост и виляние, возвращение лицом |
+| **Idle** | Редкие небольшие сценарии: моргание, взгляд в стороны, махание, потягивание, дремота, удивление, покачивание |
+
+Танец и виляние хвостом **не являются idle-анимацией**. Если при музыке начинается печать, танец сразу прерывается, а после прекращения печати возобновляется.
+
+Реакцию на музыку и печать можно отключить раздельно. Музыкальная интеграция читает только статус `Playing` через MPRIS. Если AIMP не предоставляет MPRIS, останутся обычные idle-анимации.
+
+## Конфигурация и код
+
+Файл настроек: `~/.config/crt-clock/config.ini`.
+
+```text
+src/
+  main.cpp               Qt-окно, часы, конфигурация, меню
+  crt_style.hpp          Свечение, пиксельный растр, прозрачность
+  perspective.hpp        8 маркеров, разбиение на 4 проекции
+  pet_poses.hpp          Однострочные рисунки
+  pet_animation.hpp      Отдельные сценарии и приоритеты
+  keyboard_activity.*    Сигнал активности клавиатуры X11
+```
+
+В `[quad]` хранятся координаты `x0/y0 … x7/y7`; раздел `[appearance]` управляет цветами, яркостью и CRT. Обновление пакета не трогает пользовательскую геометрию.
+
+**Ограничения:** предназначено для одного X11-экрана; обработка печати использует доступное X11-состояние клавиш, не глобальное перехватывание текста. Горячая клавиша может конфликтовать с другой программой. Параметры CRT и восемь точек нужно проверять на реальном XFCE после каждого крупного изменения.
+
+## Разработка
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel 2
+```
+
+GitHub Actions собирает проект на Ubuntu с Qt 6 и libX11. Здесь будут добавлены автоматические тесты и финальный скриншот рабочего стола.

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="480" viewBox="0 0 1100 480">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#06140f"/><stop offset="1" stop-color="#172b21"/>
+  </linearGradient>
+  <linearGradient id="tube" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#12372a"/><stop offset=".7" stop-color="#0a2419"/><stop offset="1" stop-color="#040d09"/>
+  </linearGradient>
+  <filter id="glow"><feGaussianBlur stdDeviation="2.2"/></filter>
+  <pattern id="raster" width="4" height="4" patternUnits="userSpaceOnUse">
+    <path d="M0 3.5 H4" stroke="#000" stroke-opacity=".35" stroke-width=".9"/>
+  </pattern>
+</defs>
+<rect width="1100" height="480" fill="url(#bg)"/>
+<path d="M0 405 C280 342 680 440 1100 352" fill="none" stroke="#315945" stroke-opacity=".3"/>
+<text x="55" y="89" fill="#b4cebe" font-family="monospace" font-size="34" font-weight="bold">CRT CLOCK</text>
+<text x="56" y="122" fill="#6d9785" font-family="monospace" font-size="15">NATIVE • X11 • QT 6 • PHOSPHOR GREEN</text>
+<text x="56" y="184" fill="#b4cebe" font-family="monospace" font-size="20">CLOCK  /  DATE  /  ASCII PET</text>
+<text x="56" y="217" fill="#6d9785" font-family="monospace" font-size="17">8-point perspective mapping</text>
+<text x="56" y="245" fill="#6d9785" font-family="monospace" font-size="17">typing &gt; music &gt; idle</text>
+<text x="56" y="273" fill="#6d9785" font-family="monospace" font-size="17">custom CRT glow / raster</text>
+<text x="56" y="368" fill="#4f7e61" font-family="monospace" font-size="15">DESIGN MOCKUP — LIVE DESKTOP SCREENSHOT COMING SOON</text>
+<path d="M687 74 L1037 49 L1016 370 L699 402 Z" fill="#333e38" stroke="#628b78" stroke-width="8"/>
+<path d="M712 102 L1015 85 L994 350 L724 371 Z" fill="url(#tube)" stroke="#183c2d" stroke-width="8"/>
+<g transform="matrix(1,-.038,-.08,1,29,28)" font-family="monospace" fill="#aaf1ac" text-anchor="middle">
+  <text x="864" y="185" font-size="61" font-weight="bold" filter="url(#glow)" opacity=".45">19:51</text>
+  <text x="864" y="185" font-size="61" font-weight="bold">19:51</text>
+  <text x="864" y="226" font-size="21">TUE, 03 NOV 2026</text>
+  <text x="864" y="294" font-size="28">(づ｡◕‿‿◕｡)づ</text>
+</g>
+<path d="M712 102 L1015 85 L994 350 L724 371 Z" fill="url(#raster)" opacity=".7"/>
+</svg>

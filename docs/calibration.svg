@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="410" viewBox="0 0 780 410">
+<rect width="780" height="410" rx="14" fill="#0a1c15"/>
+<text x="35" y="48" font-family="monospace" fill="#b4cebe" font-size="19">PERSPECTIVE / 8 HANDLES</text>
+<text x="35" y="76" font-family="monospace" fill="#6d9785" font-size="13">Corners + independent edge midpoints; previous 4-point settings are preserved</text>
+<path d="M205 125 L600 90 L627 315 L162 345 Z" fill="#143327" stroke="#335e49" stroke-width="4"/>
+<path d="M205 125 L399 101 L600 90 L612 201 L627 315 L392 330 L162 345 L180 236 Z" fill="#1b4833" fill-opacity=".44" stroke="#a7efb5" stroke-width="2.5"/>
+<path d="M399 101 L392 330 M180 236 L612 201" stroke="#6d9785" stroke-dasharray="5 6" stroke-width="1.5"/>
+<g font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle" dominant-baseline="central">
+<circle cx="205" cy="125" r="15" fill="#abf5b8"/><text x="205" y="125" fill="#10251c">1</text>
+<circle cx="600" cy="90" r="15" fill="#abf5b8"/><text x="600" y="90" fill="#10251c">2</text>
+<circle cx="627" cy="315" r="15" fill="#abf5b8"/><text x="627" y="315" fill="#10251c">3</text>
+<circle cx="162" cy="345" r="15" fill="#abf5b8"/><text x="162" y="345" fill="#10251c">4</text>
+<circle cx="399" cy="101" r="12" fill="#6da78b"/><text x="399" y="101" fill="#0e251a">5</text>
+<circle cx="612" cy="201" r="12" fill="#6da78b"/><text x="612" y="201" fill="#0e251a">6</text>
+<circle cx="392" cy="330" r="12" fill="#6da78b"/><text x="392" y="330" fill="#0e251a">7</text>
+<circle cx="180" cy="236" r="12" fill="#6da78b"/><text x="180" y="236" fill="#0e251a">8</text>
+</g>
+<text x="35" y="392" font-family="monospace" font-size="13" fill="#6d9785">SUPER+SHIFT+C  →  DRAG  →  ENTER SAVE / ESC CANCEL</text>
+</svg>

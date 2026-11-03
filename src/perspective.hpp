@@ -6,6 +6,7 @@
 #include <QPolygonF>
 #include <QTransform>
 #include <QPointF>
+#include <QLineF>
 #include <array>
 #include <algorithm>
 
