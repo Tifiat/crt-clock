@@ -13,7 +13,8 @@ constexpr int kFrontColumns = 10;
 constexpr int kBackColumns = 11;
 constexpr int kFrontCellPixels = 31;
 constexpr int kBackCellPixels = 28;
-constexpr int kFontPixels = 41;
+constexpr int kDefaultFontPixels = 43;
+constexpr int kDefaultStrokeStrength = 25;
 constexpr int kPoseCount = 39;
 
 enum PoseId : int {
