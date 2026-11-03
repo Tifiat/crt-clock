@@ -30,7 +30,8 @@ int main() {
             "approved pose grid changed");
     require(pet::kFrontColumns * pet::kFrontCellPixels == 310,
             "silhouette is no longer compact");
-    require(pet::kFontPixels == 41, "fixed pet font changed");
+    require(pet::kDefaultFontPixels == 43 && pet::kDefaultStrokeStrength == 25,
+            "default pet appearance changed");
 
     // Compare every approved pose, including historical backside tail frames.
     for (int id = 0; id < pet::kPoseCount; ++id) {
