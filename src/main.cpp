@@ -660,10 +660,13 @@ protected:
         if (!editing_) return;
         switch (e->key()) {
             case Qt::Key_Escape:
-                cfg_.quad = before_; editing_ = false; applyMode(); break;
+                cfg_.quad = before_;
+                finishCalibration(false);
+                break;
             case Qt::Key_Enter:
             case Qt::Key_Return:
-                cfg_.save(); editing_ = false; redraw(); applyMode(); break;
+                finishCalibration(true);
+                break;
             case Qt::Key_B:
                 cfg_.backgroundAlpha = cfg_.backgroundAlpha ? 0 : 35; redraw(); break;
             case Qt::Key_F:
@@ -673,6 +676,23 @@ protected:
     }
 
 private:
+    void finishCalibration(bool save) {
+        if (save) cfg_.save();
+        editing_ = false;
+        selected_ = -1;
+        if (save) redraw();
+        applyMode();
+        // Switching from Qt::WindowStaysOnTopHint to WindowStaysOnBottomHint
+        // recreates the X11 widget window. XFWM4 can drop its workspace
+        // assignment after the first map/WM state requests have completed.
+        // Reassert only on this transition, including late WM processing.
+        for (const int delayMs : {0, 250, 900, 2000, 4500}) {
+            QTimer::singleShot(delayMs, this, [this] {
+                if (!editing_) reassertWorkspaceStickiness();
+            });
+        }
+    }
+
     void reassertWorkspaceStickiness() {
         if (isVisible()) desktop::keepOnEveryWorkspace(winId());
     }
@@ -726,6 +746,9 @@ private:
             desktop::keepOnEveryWorkspace(winId());
         });
         QTimer::singleShot(350, this, [this] {
+            desktop::keepOnEveryWorkspace(winId());
+        });
+        QTimer::singleShot(1200, this, [this] {
             desktop::keepOnEveryWorkspace(winId());
         });
         if (editing_) { raise(); activateWindow(); setFocus(); }
