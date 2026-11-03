@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=CRT Clock
+Comment=Perspective clock and animated ASCII pet
+Exec=crt-clock
+Icon=preferences-system-time
+Terminal=false
+Categories=Utility;
+Actions=Calibrate;Quit;
+
+[Desktop Action Calibrate]
+Name=Calibrate perspective
+Exec=crt-clock --calibrate
+
+[Desktop Action Quit]
+Name=Quit CRT Clock
+Exec=crt-clock --quit
