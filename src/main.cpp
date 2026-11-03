@@ -29,6 +29,7 @@
 #include <QList>
 #include "crt_style.hpp"
 #include "pet_poses.hpp"
+#include "pet_render.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QFontMetricsF>
@@ -179,7 +180,7 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
+QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, quint64 pressCount) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -191,21 +192,7 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
     time.setWeight(QFont::Bold);
     QFont date(cfg.font);
     date.setPixelSize(32);
-    date.setWeight(QFont::Medium);
-    QFont petFont(cfg.font);
-    petFont.setPixelSize(45);
-
-    // One shared font size for every animation pose. Never shrink the pet
-    // when a wider frame appears; that previously made it jump and deform.
-    while (petFont.pixelSize() > 19) {
-        QFontMetricsF metrics(petFont);
-        qreal widest = metrics.horizontalAdvance(cfg.pet);
-        for (int i = 1; i <= 17; ++i)
-            widest = std::max(widest, metrics.horizontalAdvance(pet::glyph(i, cfg.pet)));
-        if (widest <= 446) break;
-        petFont.setPixelSize(petFont.pixelSize() - 1);
-    }
-
+    date.setWeight(QFont::Bold);
     const auto now = QDateTime::currentDateTime();
     QColor timeColor = cfg.green;
     timeColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
@@ -218,7 +205,8 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
-    centered(text, QRectF(10, 217, 460, 82), pet::glyph(pose, cfg.pet), petFont, petColor);
+    pet::paint(text, QRectF(10, 217, 460, 82), cfg.font,
+               cfg.pet, pose, petColor, static_cast<unsigned>(pressCount % 12));
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -275,6 +263,11 @@ public:
 
         const bool typing = cfg_.typingResponse && keyboard_->recentlyTyping(now);
         bool dirty = animator_.advance(now, typing, cfg_.musicResponse && musicPlaying_);
+        const quint64 count = keyboard_->pressCount();
+        if (count != keyPressCount_) {
+            keyPressCount_ = count;
+            dirty = true; // Change the single Japanese glyph on every new press.
+        }
 
         // Rare two-pulse phosphor flicker affects CLOCK only, not the pet.
         double intensity = 1.0;
@@ -551,7 +544,7 @@ protected:
 
 private:
     void redraw() {
-        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_);
+        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, keyPressCount_);
         update();
     }
     void applyMode() {
@@ -580,6 +573,7 @@ private:
     pet::Animator animator_;
     QPointF last_;
     int selected_ = -1;
+    quint64 keyPressCount_ = 0;
     qint64 nextMusicCheck_ = 0;
     qint64 flickerDue_ = 60000;
     qint64 flickerStart_ = -1;
