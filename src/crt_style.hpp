@@ -7,7 +7,7 @@
 
 // CRT texture on a small offscreen image, before perspective mapping.
 inline QImage crtComposite(const QImage &glyphs, QColor background, int backgroundAlpha,
-                           int glow, int scanlines, bool border, QColor borderColor) {
+                           int glow, int pixelScale, bool border, QColor borderColor) {
     const int w = glyphs.width(), h = glyphs.height();
     QImage result(w, h, QImage::Format_ARGB32_Premultiplied);
     result.fill(Qt::transparent);
@@ -17,12 +17,18 @@ inline QImage crtComposite(const QImage &glyphs, QColor background, int backgrou
         background.setAlpha(std::clamp(backgroundAlpha, 0, 255));
         p.fillRect(result.rect(), background);
     }
+    // Pixelated phosphor glyphs are created at fixed logical resolution,
+    // then transformed onto the monitor; no external font is required.
+    QImage pixels = pixelScale <= 1 ? glyphs :
+            glyphs.scaled(std::max(1, w/pixelScale), std::max(1, h/pixelScale),
+                          Qt::IgnoreAspectRatio, Qt::FastTransformation)
+                  .scaled(w, h, Qt::IgnoreAspectRatio, Qt::FastTransformation);
     if (glow > 0) {
         // Low-resolution convolution: two inexpensive soft phosphor halos.
-        QImage wide = glyphs.scaled(std::max(1, w / 12), std::max(1, h / 12),
+        QImage wide = pixels.scaled(std::max(1, w / 12), std::max(1, h / 12),
                 Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
                 .scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        QImage tight = glyphs.scaled(std::max(1, w / 5), std::max(1, h / 5),
+        QImage tight = pixels.scaled(std::max(1, w / 5), std::max(1, h / 5),
                 Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
                 .scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         p.setOpacity(0.65 * glow / 100.0);
@@ -31,12 +37,7 @@ inline QImage crtComposite(const QImage &glyphs, QColor background, int backgrou
         p.drawImage(0, 0, tight);
     }
     p.setOpacity(1);
-    p.drawImage(0, 0, glyphs);
-    if (scanlines > 0) {
-        QColor dark(0, 0, 0, std::clamp(scanlines * 75 / 100, 0, 75));
-        for (int y = 1; y < h; y += 4)
-            p.fillRect(QRect(0, y, w, 1), dark);
-    }
+    p.drawImage(0, 0, pixels);
     if (backgroundAlpha > 0) {
         QRadialGradient v(QPointF(w * .5, h * .48), w * .74);
         v.setColorAt(0, QColor(0, 0, 0, 0));

@@ -14,6 +14,16 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QElapsedTimer>
+#include <QFontComboBox>
+#include <QLocale>
+#include <QLineF>
+#include <QPainterPath>
+#include <QTimer>
+#include <memory>
+#include "pet_animation.hpp"
+#include "perspective.hpp"
+#include "keyboard_activity.hpp"
 #include <QHBoxLayout>
 #include <QColorDialog>
 #include <QList>
@@ -51,7 +61,7 @@ QString configFile() {
 }
 
 struct Settings {
-    std::array<QPointF, 4> quad;
+    perspective::Handles quad;
     QString font = QStringLiteral("IBM Plex Mono");
     QString pet = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     QColor green = QColor("#B0FFBB");
@@ -64,14 +74,17 @@ struct Settings {
     int scanlineStrength = 24;
     int brightness = 84;
     bool musicResponse = true;
+    bool typingResponse = true;
+    bool clockFlicker = true;
+    int pixelScale = 2;
 
     explicit Settings(QRect screen) {
         const qreal x = screen.left() + screen.width() * .65;
         const qreal y = screen.top() + screen.height() * .31;
         const qreal w = screen.width() * .18;
         const qreal h = screen.height() * .27;
-        quad = {QPointF(x, y + 8), QPointF(x + w, y),
-                QPointF(x + w - 10, y + h), QPointF(x + 8, y + h + 7)};
+        quad = perspective::fromCorners({QPointF(x, y + 8), QPointF(x+w, y),
+            QPointF(x+w-10, y+h), QPointF(x+8, y+h+7)});
     }
 
     void load() {
@@ -79,6 +92,13 @@ struct Settings {
         for (int i = 0; i < 4; ++i) {
             quad[i].setX(s.value(QString("quad/x%1").arg(i), quad[i].x()).toDouble());
             quad[i].setY(s.value(QString("quad/y%1").arg(i), quad[i].y()).toDouble());
+        }
+        // v0.2 saved four points only: derive new midpoints AFTER loading those.
+        const std::array<QPointF,4> oldCorners{quad[0], quad[1], quad[2], quad[3]};
+        const auto defaults = perspective::fromCorners(oldCorners);
+        for (int i = 4; i < 8; ++i) {
+            quad[i].setX(s.value(QString("quad/x%1").arg(i), defaults[i].x()).toDouble());
+            quad[i].setY(s.value(QString("quad/y%1").arg(i), defaults[i].y()).toDouble());
         }
         font = s.value("appearance/font", font).toString();
         pet = s.value("appearance/pet", pet).toString();
@@ -92,6 +112,9 @@ struct Settings {
         scanlineStrength = std::clamp(s.value("appearance/scanline_strength", scanlineStrength).toInt(), 0, 100);
         brightness = std::clamp(s.value("appearance/brightness", brightness).toInt(), 25, 100);
         musicResponse = s.value("pet/music_response", musicResponse).toBool();
+        typingResponse = s.value("pet/typing_response", typingResponse).toBool();
+        clockFlicker = s.value("appearance/clock_flicker", clockFlicker).toBool();
+        pixelScale = std::clamp(s.value("appearance/pixel_scale", pixelScale).toInt(), 1, 4);
         if (!green.isValid()) green = QColor("#B0FFBB");
         if (!dim.isValid()) dim = QColor("#70BB8A");
         if (!background.isValid()) background = QColor("#092419");
@@ -101,7 +124,7 @@ struct Settings {
     void save() const {
         QDir().mkpath(QFileInfo(configFile()).absolutePath());
         QSettings s(configFile(), QSettings::IniFormat);
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 8; ++i) {
             s.setValue(QString("quad/x%1").arg(i), quad[i].x());
             s.setValue(QString("quad/y%1").arg(i), quad[i].y());
         }
@@ -117,25 +140,24 @@ struct Settings {
         s.setValue("appearance/scanline_strength", scanlineStrength);
         s.setValue("appearance/brightness", brightness);
         s.setValue("pet/music_response", musicResponse);
+        s.setValue("pet/typing_response", typingResponse);
+        s.setValue("appearance/clock_flicker", clockFlicker);
+        s.setValue("appearance/pixel_scale", pixelScale);
         s.sync();
     }
 };
 
 QRect bounds(const Settings &cfg) {
-    QPolygonF p;
-    for (const auto &c : cfg.quad) p << c;
-    return p.boundingRect().adjusted(-12, -12, 12, 12).toAlignedRect();
+    return perspective::pixelBounds(cfg.quad);
 }
 
-void centered(QPainter &p, QRectF r, const QString &text, QFont font, QColor color) {
-    while (font.pixelSize() > 12 && QFontMetricsF(font).horizontalAdvance(text) > r.width() - 8)
-        font.setPixelSize(font.pixelSize() - 1);
+void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QColor color) {
     p.setFont(font);
     p.setPen(color);
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose) {
+QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -145,28 +167,41 @@ QImage drawCanvas(const Settings &cfg, int pose) {
     QFont time(cfg.font);
     time.setPixelSize(97);
     time.setWeight(QFont::Bold);
-    time.setHintingPreference(QFont::PreferFullHinting);
     QFont date(cfg.font);
     date.setPixelSize(32);
     date.setWeight(QFont::Medium);
-    QFont pet(cfg.font);
-    pet.setPixelSize(45);
+    QFont petFont(cfg.font);
+    petFont.setPixelSize(45);
+
+    // One shared font size for every animation pose. Never shrink the pet
+    // when a wider frame appears; that previously made it jump and deform.
+    while (petFont.pixelSize() > 19) {
+        QFontMetricsF metrics(petFont);
+        qreal widest = metrics.horizontalAdvance(cfg.pet);
+        for (int i = 1; i <= 17; ++i)
+            widest = std::max(widest, metrics.horizontalAdvance(pet::glyph(i, cfg.pet)));
+        if (widest <= 446) break;
+        petFont.setPixelSize(petFont.pixelSize() - 1);
+    }
 
     const auto now = QDateTime::currentDateTime();
-    QColor primary = cfg.green;
-    primary.setAlphaF(cfg.brightness / 100.0);
-    QColor secondary = cfg.dim;
-    secondary.setAlphaF(cfg.brightness / 100.0);
+    QColor timeColor = cfg.green;
+    timeColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
+    QColor dateColor = cfg.dim;
+    dateColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
+    QColor petColor = cfg.green;
+    petColor.setAlphaF(cfg.brightness / 100.0);
 
-    centered(text, QRectF(12, 27, 456, 125), now.toString("HH:mm"), time, primary);
+    centered(text, QRectF(12, 27, 456, 125), now.toString("HH:mm"), time, timeColor);
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
-             date, secondary);
-    centered(text, QRectF(10, 217, 460, 82), petPose(cfg.pet, pose), pet, primary);
+             date, dateColor);
+    centered(text, QRectF(10, 217, 460, 82), pet::glyph(pose, cfg.pet), petFont, petColor);
     text.end();
 
+    // Final scanlines are drawn AFTER perspective mapping, at screen scale.
     return crtComposite(glyphs, cfg.background, cfg.backgroundAlpha, cfg.glow,
-                        cfg.scanlines ? cfg.scanlineStrength : 0, cfg.frame, cfg.dim);
+                        cfg.pixelScale, cfg.frame, cfg.dim);
 }
 
 // Read only the playback state over MPRIS; never capture audio or sound.
@@ -198,30 +233,52 @@ public:
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating);
         setMouseTracking(true);
-        connect(&tick_, &QTimer::timeout, this, [this] {
-            ++seconds_;
-            if (cfg_.musicResponse && seconds_ % 5 == 0)
-                musicPlaying_ = musicIsPlaying();
-
-            if (cfg_.musicResponse && musicPlaying_) {
-                steps_.clear();
-                pose_ = 8 + (seconds_ % 3);
-            } else if (!steps_.isEmpty()) {
-                pose_ = steps_.takeFirst();
-            } else if (QRandomGenerator::global()->bounded(14) == 0) {
-                const int choice = QRandomGenerator::global()->bounded(4);
-                if (choice == 0) steps_ = {1, 0};                      // Blink
-                if (choice == 1) steps_ = {3, 0, 3, 0};                // Wave
-                if (choice == 2) steps_ = {2, 4, 0};                   // Sway
-                if (choice == 3) steps_ = {4, 5, 6, 5, 7, 5, 4, 0};  // Turn, tail wag, return
-                pose_ = steps_.takeFirst();
-            } else {
-                pose_ = 0;
-            }
-            redraw();
-        });
-        tick_.start(1000);
+        elapsed_.start();
+        keyboard_ = std::make_unique<KeyboardActivity>([this] { edit(); });
+        flickerDue_ = QRandomGenerator::global()->bounded(55000, 85000);
+        connect(&tick_, &QTimer::timeout, this, [this] { updateState(); });
+        tick_.start(40);
         redraw();
+    }
+
+    void updateState() {
+        const qint64 now = elapsed_.elapsed();
+        keyboard_->poll(now);
+        if (cfg_.musicResponse && now >= nextMusicCheck_) {
+            musicPlaying_ = musicIsPlaying();
+            nextMusicCheck_ = now + 3000;
+        } else if (!cfg_.musicResponse) {
+            musicPlaying_ = false;
+        }
+
+        const bool typing = cfg_.typingResponse && keyboard_->recentlyTyping(now);
+        bool dirty = animator_.advance(now, typing, cfg_.musicResponse && musicPlaying_);
+
+        // Rare two-pulse phosphor flicker affects CLOCK only, not the pet.
+        double intensity = 1.0;
+        if (cfg_.clockFlicker) {
+            if (flickerStart_ < 0 && now >= flickerDue_) {
+                flickerStart_ = now;
+                flickerDue_ = now + QRandomGenerator::global()->bounded(55000, 85000);
+            }
+            if (flickerStart_ >= 0) {
+                static constexpr double pulses[] = {0.95, 0.38, 0.98, 0.24, 1.0};
+                const int phase = int((now - flickerStart_) / 95);
+                if (phase < 5) intensity = pulses[phase];
+                else flickerStart_ = -1;
+            }
+        }
+        if (intensity != clockIntensity_) {
+            clockIntensity_ = intensity;
+            dirty = true;
+        }
+
+        const auto stamp = QDateTime::currentDateTime().toString("yyyyMMddHHmm");
+        if (stamp != lastMinute_) {
+            lastMinute_ = stamp;
+            dirty = true;
+        }
+        if (dirty) redraw();
     }
 
     void start() { editing_ = false; applyMode(); }
@@ -267,8 +324,26 @@ public:
                   [](Settings &s, int x) { s.scanlineStrength = x; s.scanlines = x > 0; });
         addSlider("Text brightness", cfg_.brightness, 25, 100,
                   [](Settings &s, int x) { s.brightness = x; });
+        addSlider("Pixel / raster size", cfg_.pixelScale, 1, 4,
+                  [](Settings &s, int x) { s.pixelScale = x; });
         addSlider("Background opacity", cfg_.backgroundAlpha, 0, 180,
                   [](Settings &s, int x) { s.backgroundAlpha = x; });
+
+        auto *flicker = new QCheckBox("Rare two-pulse clock flicker", dialog);
+        flicker->setChecked(cfg_.clockFlicker);
+        form->addRow(flicker);
+        connect(flicker, &QCheckBox::toggled, dialog, [this](bool on) {
+            cfg_.clockFlicker = on;
+            if (!on) clockIntensity_ = 1;
+            redraw();
+        });
+
+        auto *typing = new QCheckBox("React to typing (priority over music)", dialog);
+        typing->setChecked(cfg_.typingResponse);
+        form->addRow(typing);
+        connect(typing, &QCheckBox::toggled, dialog, [this](bool on) {
+            cfg_.typingResponse = on;
+        });
 
         auto *music = new QCheckBox("Dance while a MPRIS player is playing", dialog);
         music->setChecked(cfg_.musicResponse);
@@ -286,6 +361,17 @@ public:
             cfg_.frame = on;
             redraw();
         });
+
+        auto *fontMenu = new QFontComboBox(dialog);
+        fontMenu->setFontFilters(QFontComboBox::MonospacedFonts);
+        fontMenu->setCurrentFont(QFont(cfg_.font));
+        form->addRow("Font", fontMenu);
+        connect(fontMenu, &QFontComboBox::currentFontChanged, dialog,
+                [this](const QFont &f) { cfg_.font = f.family(); redraw(); });
+
+        auto *calibrate = new QPushButton("Edit 8 perspective points (Super+Shift+C)", dialog);
+        form->addRow(calibrate);
+        connect(calibrate, &QPushButton::clicked, dialog, [this] { edit(); });
 
         auto *colorButton = new QPushButton("Text color…", dialog);
         form->addRow(colorButton);
@@ -326,27 +412,24 @@ protected:
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         const QPointF origin(geometry().topLeft());
-        QPolygonF from, to;
-        from << QPointF(0, 0) << QPointF(W, 0) << QPointF(W, H) << QPointF(0, H);
-        for (const auto &point : cfg_.quad) to << point - origin;
-        QTransform t;
-        if (QTransform::quadToQuad(from, to, t)) {
-            p.setTransform(t);
-            p.drawImage(QPointF(), frame_);
-            p.resetTransform();
-        }
+        perspective::draw(p, frame_, cfg_.quad, origin);
+        perspective::scanlines(p, cfg_.quad, origin,
+                              cfg_.scanlines ? cfg_.scanlineStrength : 0);
         if (!editing_) return;
+        QPolygonF to = perspective::outline(cfg_.quad);
+        for (QPointF &point : to) point -= origin;
         p.setPen(QPen(QColor("#7BFFAA"), 2, Qt::DashLine));
         p.setBrush(Qt::NoBrush);
         p.drawPolygon(to);
-        for (int i = 0; i < 4; ++i) {
-            p.setPen(QColor("#102A1C"));
+        for (int i = 0; i < 8; ++i) {
+            const QPointF point = cfg_.quad[i] - origin;
+            p.setPen(QPen(QColor("#102A1C"), 1));
             p.setBrush(i == selected_ ? QColor("#FFFFA1") : QColor("#7BFFAA"));
-            p.drawEllipse(to[i], 10, 10);
+            p.drawEllipse(point, i < 4 ? 10 : 8, i < 4 ? 10 : 8);
             p.setPen(QColor("#102A1C"));
             QFont f(cfg_.font); f.setPixelSize(12); f.setBold(true);
             p.setFont(f);
-            p.drawText(QRectF(to[i].x()-10, to[i].y()-10, 20, 20),
+            p.drawText(QRectF(point.x()-10, point.y()-10, 20, 20),
                        Qt::AlignCenter, QString::number(i+1));
         }
         QRect top(14, 14, std::min(width()-28, 890), 80);
@@ -357,22 +440,21 @@ protected:
         QFont f(cfg_.font); f.setPixelSize(15); p.setFont(f);
         p.drawText(top.adjusted(12, 6, -6, -6), Qt::AlignLeft | Qt::TextWordWrap,
             QStringLiteral("CRT-CLOCK / КАЛИБРОВКА\n"
-                           "Тяни углы или весь экран • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
+                           "8 точек: углы и середины сторон • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
     }
 
     void mousePressEvent(QMouseEvent *e) override {
         if (!editing_ || e->button() != Qt::LeftButton) return;
         QPointF pt = e->position() + QPointF(geometry().topLeft());
-        for (int i = 0; i < 4; ++i) {
-            if (QLineF(pt, cfg_.quad[i]).length() < 25) {
+        for (int i = 0; i < 8; ++i) {
+            if (QLineF(pt, cfg_.quad[i]).length() < 20) {
                 selected_ = i;
                 last_ = pt;
                 update();
                 return;
             }
         }
-        QPolygonF polygon;
-        for (const auto &point : cfg_.quad) polygon << point;
+        QPolygonF polygon = perspective::outline(cfg_.quad);
         if (polygon.containsPoint(pt, Qt::OddEvenFill)) {
             selected_ = 4; // Drag entire quad.
             last_ = pt;
@@ -414,7 +496,10 @@ protected:
     }
 
 private:
-    void redraw() { frame_ = drawCanvas(cfg_, pose_); update(); }
+    void redraw() {
+        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_);
+        update();
+    }
     void applyMode() {
         hide();
         Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint;
@@ -432,12 +517,19 @@ private:
 
     QRect screen_;
     Settings cfg_;
-    std::array<QPointF, 4> before_{};
+    perspective::Handles before_{};
     QImage frame_;
     QTimer tick_;
+    QElapsedTimer elapsed_;
+    std::unique_ptr<KeyboardActivity> keyboard_;
+    pet::Animator animator_;
     QPointF last_;
-    int selected_ = -1, pose_ = 0, seconds_ = 0;
-    QList<int> steps_;
+    int selected_ = -1;
+    qint64 nextMusicCheck_ = 0;
+    qint64 flickerDue_ = 60000;
+    qint64 flickerStart_ = -1;
+    double clockIntensity_ = 1.0;
+    QString lastMinute_;
     bool musicPlaying_ = false;
     QDialog *settingsWindow_ = nullptr;
     bool editing_ = false;
