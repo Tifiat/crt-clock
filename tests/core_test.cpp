@@ -1,5 +1,8 @@
 #include <QPointF>
 #include <QString>
+#include <QFile>
+#include <QTemporaryDir>
+#include <QByteArray>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -12,6 +15,8 @@
 #include "crt_style.hpp"
 #include "matrix_rain.hpp"
 #include "perspective.hpp"
+#include "clock_flicker.hpp"
+#include "desktop_autostart.hpp"
 
 static void require(bool condition, const char *message) {
     if (!condition) {
@@ -203,6 +208,39 @@ int main() {
     animator.advance(2000, false, false);
     require(animator.activity() == pet::Activity::Idle, "idle restored");
     require(animator.pose() == pet::F00, "neutral idle pose");
+
+    // Flicker frequency is disabled at zero and reaches an interval of
+    // four seconds at maximum. Old disabled checkbox migrates to frequency 0.
+    require(crt::flickerIntervalMs(0) == 0, "zero must turn flicker off");
+    require(crt::flickerIntervalMs(100) == 4000, "fastest flicker must be 4 seconds");
+    require(crt::flickerIntervalMs(25) == 71500, "legacy-like default interval");
+    require(crt::flickerIntervalMs(1) > crt::flickerIntervalMs(25),
+            "flicker frequency direction incorrect");
+    require(crt::flickerIntervalMs(50) > crt::flickerIntervalMs(100),
+            "flicker intervals must decrease as frequency grows");
+    require(crt::flickerIntervalMs(101) == 4000, "frequency upper bound");
+
+    // Session autostart is opt-in, per-user and reversible. This test uses an
+    // isolated XDG_CONFIG_HOME and must never touch a real user's autostart.
+    QTemporaryDir temporaryConfig;
+    require(temporaryConfig.isValid(), "failed to create isolated autostart config");
+    const QByteArray previousXdg = qgetenv("XDG_CONFIG_HOME");
+    qputenv("XDG_CONFIG_HOME", temporaryConfig.path().toUtf8());
+    require(desktop::autostartPath().startsWith(temporaryConfig.path()),
+            "autostart must follow XDG_CONFIG_HOME");
+    require(!desktop::autostartEnabled(), "autostart must be opt-in");
+    require(desktop::setAutostart(true), "failed to enable XDG autostart");
+    require(desktop::autostartEnabled(), "autostart entry not created");
+    QFile entry(desktop::autostartPath());
+    require(entry.open(QIODevice::ReadOnly), "cannot inspect autostart entry");
+    const QByteArray ini = entry.readAll();
+    require(ini.contains("[Desktop Entry]") && ini.contains("Exec=crt-clock"),
+            "autostart entry must launch the widget");
+    entry.close();
+    require(desktop::setAutostart(false), "failed to disable XDG autostart");
+    require(!desktop::autostartEnabled(), "autostart entry remains after disable");
+    if (previousXdg.isEmpty()) qunsetenv("XDG_CONFIG_HOME");
+    else qputenv("XDG_CONFIG_HOME", previousXdg);
 
     // Old four-corner configs still get exactly four derived edge midpoints.
     const std::array<QPointF,4> old{
