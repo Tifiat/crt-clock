@@ -119,6 +119,12 @@ inline void grille(QPainter &p, const Handles &absolute, QPointF origin, int str
     p.restore();
 }
 
+// Moving scanline / ripple sweep speed; static CRT raster lines do not move.
+// 0 = slow (5 s per sweep), 100 = fast (0.5 s per sweep).
+inline int sweepDurationMs(int speed) {
+    return 5000 - std::clamp(speed, 0, 100) * 45;
+}
+
 // Low-cost intermittent analog-signal shimmer. Only a few stroked scanlines
 // are repainted; no fragment shader, image buffer, or CPU-heavy convolution.
 inline void ripple(QPainter &p, const Handles &absolute, QPointF origin,
