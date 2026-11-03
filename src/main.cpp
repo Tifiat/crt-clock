@@ -38,7 +38,6 @@
 #include "pet_tail.hpp"
 #include "clock_flicker.hpp"
 #include "desktop_autostart.hpp"
-#include "desktop_workspace.hpp"
 #include "matrix_rain.hpp"
 #include <QDir>
 #include <QFileInfo>
@@ -62,8 +61,8 @@
 #include <algorithm>
 #include <array>
 #include <unistd.h>
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
+// Xlib defines None as a macro; include this only after every Qt header.
+#include "desktop_workspace.hpp"
 
 namespace {
 constexpr int W = 480;
