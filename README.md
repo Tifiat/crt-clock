@@ -1,126 +1,71 @@
 # CRT Clock
 
-![CRT Clock illustrative preview](docs/preview.svg)
+A lightweight **Qt 6 / X11 desktop widget** that perspective-maps a clock, date, and animated character onto a monitor in your wallpaper. Only the widget is warped, not the desktop or other windows.
 
-**Лёгкий виджет с перспективой для Arch Linux + XFCE/X11.** Часы, дата и символьный питомец размещаются непосредственно на наклонённом экране компьютера из обоев. Остальные окна не искажаются.
+Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader required.
 
-> Макет в заголовке — иллюстрация, а не скриншот программы. Финальный скриншот рабочего стола добавим отдельно, когда он будет готов.
+## Features
 
-## Установка
+- **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
+- **CRT effects:** phosphor glow, scanlines, pixel grid, adjustable colors, brightness, and transparency.
+- **Animated pet:** idle expressions, MPRIS music dances, and typing reactions. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **Desktop integration:** stays on all workspaces where supported by the window manager, with a right-click settings menu.
+
+## Install (Arch Linux)
 
 ```bash
 git clone https://github.com/Tifiat/crt-clock.git
 cd crt-clock
 makepkg -si
+crt-clock
 ```
 
-Сборка через официальный Arch `makepkg`, без Python, Electron, WebView или фонового браузера. Требуются Qt 6 и X11, зависимости устанавливаются пакетным менеджером.
+Requires Qt 6 and X11; `makepkg` installs package dependencies.
 
-**Обновление:**
+## Controls
+
+| Command / shortcut | Action |
+| --- | --- |
+| `crt-clock` | Start the widget |
+| `crt-clock --calibrate` or `Super+Shift+C` | Adjust the screen perspective |
+| Drag handles 1–8 | Warp individual corners or edges |
+| Drag handle 9 | Move the whole overlay |
+| `Enter` / `Esc` (in calibration) | Save / cancel |
+| `B` / `F` (in calibration) | Background / frame |
+| `crt-clock --settings` or right-click | Appearance and animation settings |
+| `crt-clock --quit` | Stop the widget |
+
+### Perspective calibration
+
+![Exaggerated perspective example showing eight independent warp handles and a center move handle](docs/calibration.svg)
+
+The diagram exaggerates the tilt to show what each control does. The actual overlay is fitted manually to the monitor in your wallpaper.
+
+Settings are stored in `~/.config/crt-clock/config.ini` and survive updates.
+
+## Update
 
 ```bash
 cd ~/crt-clock
+git stash push -m "local PKGBUILD" -- PKGBUILD
 git pull --ff-only
-makepkg -si
+makepkg -Cfsi
 crt-clock --quit
 crt-clock >/dev/null 2>&1 &
 ```
 
-Файл пользовательских настроек сохраняется при переустановке.
+The `stash` step protects the local `PKGBUILD` version change that `makepkg` may leave behind. Restart the widget after installation.
 
-## Управление
-
-| Команда / клавиша | Действие |
-|---|---|
-| `crt-clock` | Запустить один экземпляр |
-| `crt-clock --calibrate` | Режим калибровки с 8 крайними и 1 центральной точкой |
-| `Super+Shift+C` | Та же калибровка глобальной клавишей в X11 |
-| `crt-clock --settings` | Настройки CRT-графики (также по ПКМ на виджете) |
-| `crt-clock --quit` | Завершить |
-| **Enter / Esc** | Сохранить / отменить калибровку |
-| **B / F** | В калибровке переключить фон / рамку |
-
-Автозапуск **намеренно не включается при установке**. Когда результат устроит, добавь команду `crt-clock` в XFCE → **Settings → Session and Startup → Application Autostart**.
-
-## Настройка перспективы
-
-![8 handles perspective](docs/calibration.svg)
-
-**Точки 1–4** соответствуют углам экрана, **5–8** — серединам сторон. Все восемь независимо деформируют экран. **Центральная точка 9** двигает весь виджет целиком. Используется сетка из четырёх проективно преобразованных участков. Старые значения четырёх углов из v0.2 автоматически сохраняются, новые середины сначала вычисляются из них.
-
-В обычном режиме: прозрачное для кликов окно, без рамки, без кнопки в панели задач.
-
-## CRT-графика
-
-В `crt-clock --settings` доступны яркость, зелёный цвет, свечение, **реальные сканирующие линии и апертурную сетку в пикселях экрана**, а также редкую рябь сигнала без шейдеров, пикселизация символов, прозрачность фона, двойное редкое мерцание часов и отключаемая рамка.
-
-Программа рисует внутреннее изображение 480×320, затем накладывает перспективу **только на него**. Не используется глобальный шейдер на весь экран. Реальная нагрузка зависит от композитора XFCE и требует проверки на ноутбуке.
-
-## Питомец
-
-![Pet behavior priorities](docs/behavior.svg)
-
-Оригинальная базовая поза — `(づ｡◕‿‿◕｡)づ`. Новые 18 эмоций, 7 поз лапок, 3 исторических кадра со спины и движения головы/тела имеют фиксированную геометрию. Вернулся компактный силуэт шириной **310 px** (10×31), а для поворота спиной — 308 px (11×28). Шрифт **41 px / Black**, символы дополнительно утолщены несколькими оттисками, но размер тела при смене кадра не меняется. Режим печати сдвигает питомца влево на 20 px, освобождая место для двух плотных столбцов японских знаков.
-
-Приоритеты строго определены: **печать → музыка → idle**.
-
-| Режим | Поведение |
-|---|---|
-| **Typing** | Быстрая анимация лапок. С каждого обнаруженного нажатия поднимается один японский знак в одной из двух смежных Matrix-колонок; знаки исчезают выше на уровне часов. Содержание вводимых клавиш не читается и не хранится |
-| **Music** | Восемь 3–5-секундных танцев: кивание, **разворот спиной с настоящим вилянием хвостом**, лапки, подпрыгивания, покачивание и другие. Каждый танец появляется один раз за перемешанный цикл |
-| **Idle** | Двенадцать законченных сценариев, включая взгляд двумя глазами вправо, улыбку, удивление, смущение, дремоту и движения лапок. Каждый присутствует в перемешанном цикле |
-
-Разворот спиной и виляние хвостом относятся только к музыкальному танцу; дополнительно в idle-сценарии **радости** есть короткое фронтальное виляние маленькой точкой справа от тела (0,7 с), без изменения ширины текста. Если при музыке начинается печать, танец сразу прерывается, а после прекращения печати начинается следующее действие из сохранённого перемешанного цикла.
-
-Реакцию на музыку и печать можно отключить раздельно. Музыкальная интеграция читает только статус `Playing` через MPRIS. Если AIMP не предоставляет MPRIS, останутся обычные idle-анимации.
-
-## Конфигурация и код
-
-Файл настроек: `~/.config/crt-clock/config.ini`.
-
-```text
-src/
-  main.cpp               Qt-окно, часы, конфигурация, меню
-  crt_style.hpp          Свечение, пиксельный растр, прозрачность
-  perspective.hpp        8 маркеров, разбиение на 4 проекции
-  pet_poses.hpp          Наборы поз с фиксированной геометрией
-  pet_render.hpp         Постоянная компактная сетка и утолщение питомца
-  pet_animation.hpp      12 idle / 8 music / typing, времена и приоритеты
-  pet_sequence.hpp       Перемешанный цикл действий ShuffleBag
-  japanese_glyphs.hpp    24 векторных японских знака
-  matrix_rain.hpp        2 колонки Matrix, прозрачный слой, затухание
-  keyboard_activity.*    Счётчик нажатий X11 без содержимого клавиш
-```
-
-В `[quad]` хранятся координаты `x0/y0 … x7/y7`; раздел `[appearance]` управляет цветами, яркостью и CRT. Обновление пакета не трогает пользовательскую геометрию.
-
-**Ограничения:** предназначено для одного X11-экрана. ПКМ перехватывается виджетом, поэтому он больше не полностью прозрачен для мыши; запрос на все рабочие столы выполняется через EWMH/XFCE. Простая рябь имитирует помехи линиями, не искажая изображение пиксельным шейдером; обработка печати использует доступное X11-состояние клавиш, не глобальное перехватывание текста. Горячая клавиша может конфликтовать с другой программой. Параметры CRT и девять управляющих точек нужно проверять на реальном XFCE после каждого крупного изменения.
-
-## Разработка анимаций
-
-Новые позы и сценарии добавляются только после согласования по блокам.
-Сначала прочитай [архитектуру анимаций](docs/ANIMATION_ARCHITECTURE.md),
-затем [каталог и статус кадров](docs/ANIMATION_CATALOG.md).
-Не меняй длину тела, скобки или координаты при добавлении поз; выбор
-сценария из перемешанного цикла отделён от отрисовки кадров.
-
-## Разработка
+## Build & test
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
 ```
 
-GitHub Actions собирает проект на Ubuntu с Qt 6 и libX11. Автоматические тесты проверяют геометрию, сценарии, перемешанные циклы и исчезновение Matrix-потока; финальный скриншот реального рабочего стола ещё требуется.
+## Development
 
-## После обновления до 0.5.1
+Pet frames, animation sequences, and rendering are separate modules. See [animation architecture](docs/ANIMATION_ARCHITECTURE.md) and the [approved animation catalog](docs/ANIMATION_CATALOG.md) before extending the pet.
 
-```bash
-cd ~/crt-clock
-git pull --ff-only
-makepkg -si
-crt-clock --quit
-crt-clock >/dev/null 2>&1 &
-```
-
-ПКМ по монитору на обоях открывает меню. Настройки не должны завершать процесс виджета. Если XFCE не помечает окно как находящееся на всех рабочих столах, нужно проверить поддержку EWMH конкретной оконной конфигурацией.
+Real desktop screenshots will replace illustrative imagery when available. See the [capture checklist](docs/SCREENSHOT_PLAN.md).
