@@ -526,9 +526,9 @@ public:
             settingsWindow_ = nullptr;
             // The settings window may change how XFWM4 handles our tool
             // window. Reassert affinity after dialog teardown and WM updates.
-            QTimer::singleShot(0, this, [this] { restoreWorkspaceStickiness(); });
-            QTimer::singleShot(250, this, [this] { restoreWorkspaceStickiness(); });
-            QTimer::singleShot(900, this, [this] { restoreWorkspaceStickiness(); });
+            QTimer::singleShot(0, this, [this] { reassertWorkspaceStickiness(); });
+            QTimer::singleShot(250, this, [this] { reassertWorkspaceStickiness(); });
+            QTimer::singleShot(900, this, [this] { reassertWorkspaceStickiness(); });
         });
         // Let Qt measure text/fonts after construction, then fit the content
         // within the available desktop. Labels are above fields, so there is
@@ -541,7 +541,7 @@ public:
         dialog->resize(std::min(std::max(desired.width() + 65, 460), maxWidth),
                        std::min(std::max(desired.height() + 108, 520), maxHeight));
         dialog->show();
-        QTimer::singleShot(0, this, [this] { restoreWorkspaceStickiness(); });
+        QTimer::singleShot(0, this, [this] { reassertWorkspaceStickiness(); });
     }
     void edit() {
         if (editing_) return;
@@ -673,9 +673,12 @@ protected:
     }
 
 private:
+    void reassertWorkspaceStickiness() {
+        if (isVisible()) desktop::keepOnEveryWorkspace(winId());
+    }
     void restoreWorkspaceStickiness() {
         if (isVisible() && !desktop::isOnEveryWorkspace(winId()))
-            desktop::keepOnEveryWorkspace(winId());
+            reassertWorkspaceStickiness();
     }
 
     void scheduleNextFlicker(qint64 now) {
