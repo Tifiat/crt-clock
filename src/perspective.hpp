@@ -99,4 +99,51 @@ inline void scanlines(QPainter &p, const Handles &absolute,
     }
     p.restore();
 }
+
+ 
+// An aperture-grille mask in actual display pixels, not source-image pixels.
+// Horizontal raster lines are implemented above; this adds the vertical cells.
+inline void grille(QPainter &p, const Handles &absolute, QPointF origin, int strength) {
+    if (strength <= 0) return;
+    Handles h = absolute;
+    for (auto &point : h) point -= origin;
+    QPainterPath clip;
+    clip.addPolygon(outline(h));
+    const QRect r = outline(h).boundingRect().toAlignedRect();
+    p.save();
+    p.setClipPath(clip);
+    const int alpha = std::clamp(strength * 90 / 100, 0, 90);
+    p.setPen(QPen(QColor(0, 4, 0, alpha), 1));
+    for (int x = r.left(); x <= r.right(); x += 3)
+        p.drawLine(x, r.top(), x, r.bottom());
+    p.restore();
+}
+
+// Low-cost intermittent analog-signal shimmer. Only a few stroked scanlines
+// are repainted; no fragment shader, image buffer, or CPU-heavy convolution.
+inline void ripple(QPainter &p, const Handles &absolute, QPointF origin,
+                   double progress, int strength) {
+    if (strength <= 0 || progress < 0.0 || progress > 1.0) return;
+    Handles h = absolute;
+    for (auto &point : h) point -= origin;
+    QPainterPath clip;
+    clip.addPolygon(outline(h));
+    p.save();
+    p.setClipPath(clip);
+    const double envelope = 1.0 - std::abs(2.0 * progress - 1.0);
+    const int alpha = std::clamp(static_cast<int>(strength * .58 * envelope), 0, 90);
+    if (alpha > 0) {
+        for (int i = -2; i <= 2; ++i) {
+            const double t = progress + i * .011;
+            if (t <= 0.0 || t >= 1.0) continue;
+            QColor color = i == 0 ? QColor(160, 255, 180, alpha) :
+                                     QColor(0, 12, 4, alpha / 2);
+            p.setPen(QPen(color, i == 0 ? 1.2 : .7));
+            const QPointF left = sidePoint(h[0], h[7], h[3], t);
+            const QPointF right = sidePoint(h[1], h[5], h[2], t);
+            p.drawLine(left + QPointF(i * .25, 0), right + QPointF(i * .25, 0));
+        }
+    }
+    p.restore();
+}
 } // namespace perspective
