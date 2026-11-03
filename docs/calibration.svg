@@ -1,19 +1,104 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="780" height="410" viewBox="0 0 780 410">
-<rect width="780" height="410" rx="14" fill="#0a1c15"/>
-<text x="35" y="48" font-family="monospace" fill="#b4cebe" font-size="19">PERSPECTIVE / 8 HANDLES</text>
-<text x="35" y="76" font-family="monospace" fill="#6d9785" font-size="13">Corners + independent edge midpoints; previous 4-point settings are preserved</text>
-<path d="M205 125 L600 90 L627 315 L162 345 Z" fill="#143327" stroke="#335e49" stroke-width="4"/>
-<path d="M205 125 L399 101 L600 90 L612 201 L627 315 L392 330 L162 345 L180 236 Z" fill="#1b4833" fill-opacity=".44" stroke="#a7efb5" stroke-width="2.5"/>
-<path d="M399 101 L392 330 M180 236 L612 201" stroke="#6d9785" stroke-dasharray="5 6" stroke-width="1.5"/>
-<g font-family="monospace" font-size="13" font-weight="bold" text-anchor="middle" dominant-baseline="central">
-<circle cx="205" cy="125" r="15" fill="#abf5b8"/><text x="205" y="125" fill="#10251c">1</text>
-<circle cx="600" cy="90" r="15" fill="#abf5b8"/><text x="600" y="90" fill="#10251c">2</text>
-<circle cx="627" cy="315" r="15" fill="#abf5b8"/><text x="627" y="315" fill="#10251c">3</text>
-<circle cx="162" cy="345" r="15" fill="#abf5b8"/><text x="162" y="345" fill="#10251c">4</text>
-<circle cx="399" cy="101" r="12" fill="#6da78b"/><text x="399" y="101" fill="#0e251a">5</text>
-<circle cx="612" cy="201" r="12" fill="#6da78b"/><text x="612" y="201" fill="#0e251a">6</text>
-<circle cx="392" cy="330" r="12" fill="#6da78b"/><text x="392" y="330" fill="#0e251a">7</text>
-<circle cx="180" cy="236" r="12" fill="#6da78b"/><text x="180" y="236" fill="#0e251a">8</text>
-</g>
-<text x="35" y="392" font-family="monospace" font-size="13" fill="#6d9785">SUPER+SHIFT+C  →  DRAG  →  ENTER SAVE / ESC CANCEL</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">CRT Clock perspective calibration with eight warp handles and a center move handle</title>
+  <desc id="desc">An exaggerated perspective view of a CRT monitor over a desktop wallpaper. Eight numbered handles independently warp a strongly tapered screen. The ninth handle translates the entire overlay.</desc>
+  <defs>
+    <linearGradient id="desktop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#090f10"/>
+      <stop offset="1" stop-color="#14231e"/>
+    </linearGradient>
+    <linearGradient id="bezel" x1=".1" y1="0" x2=".9" y2="1">
+      <stop stop-color="#38453e"/>
+      <stop offset=".65" stop-color="#17221e"/>
+      <stop offset="1" stop-color="#090f0c"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2=".7" y2="1">
+      <stop offset="0" stop-color="#0b271b"/>
+      <stop offset=".66" stop-color="#07160f"/>
+      <stop offset="1" stop-color="#020c08"/>
+    </linearGradient>
+    <pattern id="scanlines" width="4" height="4" patternUnits="userSpaceOnUse">
+      <path d="M0 3.5H4" stroke="#07150e" stroke-width="1.7" opacity=".75"/>
+    </pattern>
+    <filter id="phosphor" x="-20%" y="-50%" width="140%" height="200%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+    <clipPath id="screen">
+      <path d="M361 150 L603 101 L841 87 L793 255 L739 421 L566 391 L391 373 L341 255 Z"/>
+    </clipPath>
+  </defs>
+  <!-- Wallpaper is an abstract placeholder, not a fabricated desktop screenshot. -->
+  <rect width="960" height="520" fill="url(#desktop)"/>
+  <path d="M0 470 Q245 423 411 482 T960 445" fill="none" stroke="#3d6652" stroke-width="2" opacity=".18"/>
+  <path d="M0 490 Q235 444 477 505" fill="none" stroke="#719b7c" opacity=".07" stroke-width="24"/>
+
+  <g font-family="'DejaVu Sans Mono',monospace">
+    <text x="32" y="59" fill="#dbf8e5" font-size="22" font-weight="700">PERSPECTIVE</text>
+    <text x="32" y="88" fill="#a0d6b2" font-size="15">CALIBRATION</text>
+    <path d="M32 112 H257" stroke="#497a61"/>
+    <text x="32" y="155" fill="#ebffef" font-size="16">1–4</text>
+    <text x="87" y="155" fill="#9ab4a6" font-size="14">corners</text>
+    <text x="32" y="192" fill="#ebffef" font-size="16">5–8</text>
+    <text x="87" y="192" fill="#9ab4a6" font-size="14">edge handles</text>
+    <text x="32" y="229" fill="#ebffef" font-size="16">9</text>
+    <text x="87" y="229" fill="#9ab4a6" font-size="14">move whole</text>
+    <text x="87" y="248" fill="#9ab4a6" font-size="14">overlay</text>
+    <text x="32" y="315" fill="#9decb3" font-size="13">SUPER + SHIFT + C</text>
+    <text x="32" y="345" fill="#9ab4a6" font-size="13">Drag any handle</text>
+    <text x="32" y="378" fill="#9ab4a6" font-size="13">ENTER · save</text>
+    <text x="32" y="404" fill="#9ab4a6" font-size="13">ESC   · cancel</text>
+    <text x="32" y="467" fill="#718e7e" font-size="11">Diagram · exaggerated tilt</text>
+  </g>
+
+  <!-- Stylized CRT wallpaper monitor, with noticeably converging sides. -->
+  <path d="M323 121 L881 40 Q904 37 908 62 L829 473 Q823 488 801 484 L352 441 Q330 439 327 422 L302 146 Q303 128 323 121Z"
+        fill="url(#bezel)" stroke="#52675a" stroke-width="5"/>
+  <path d="M344 136 L860 66 L815 448 L372 413 Z" fill="#060c09" stroke="#0b1b11" stroke-width="8"/>
+  <path d="M361 150 L603 101 L841 87 L793 255 L739 421 L566 391 L391 373 L341 255 Z"
+        fill="url(#glass)"/>
+
+  <g clip-path="url(#screen)">
+    <!-- Only the screen overlay is warped, not the rest of the desktop. -->
+    <path d="M361 150 L603 101 L841 87 L793 255 L739 421 L566 391 L391 373 L341 255 Z"
+          fill="#1a6d3c" opacity=".08"/>
+    <g font-family="'DejaVu Sans Mono',monospace" text-anchor="middle"
+       transform="matrix(1.05,-.10,-.20,.87,40,100)" fill="#97ffb2">
+      <text x="578" y="211" font-size="61" font-weight="700" opacity=".5" filter="url(#phosphor)">23:47</text>
+      <text x="578" y="211" font-size="61" font-weight="700">23:47</text>
+      <text x="578" y="254" font-size="20" font-weight="700">TUE 03 NOV 2026</text>
+      <text x="578" y="325" font-size="28" font-weight="700">(づ｡◕‿‿◕｡)づ</text>
+    </g>
+    <rect x="320" y="60" width="550" height="400" fill="url(#scanlines)" opacity=".55"/>
+    <!-- Warp-mesh lines: each of the four side midpoints is independent. -->
+    <g fill="none" stroke="#9ed8b4" stroke-width="1.2" stroke-dasharray="5 6" opacity=".57">
+      <path d="M603 101 Q581 247 566 391"/>
+      <path d="M341 255 Q585 241 793 255"/>
+      <path d="M471 125 Q468 248 478 381"/>
+      <path d="M724 94 Q694 250 652 405"/>
+      <path d="M350 201 Q584 171 823 172"/>
+      <path d="M366 308 Q562 322 770 338"/>
+    </g>
+  </g>
+
+  <path d="M361 150 L603 101 L841 87 L793 255 L739 421 L566 391 L391 373 L341 255 Z"
+        fill="none" stroke="#b9ffd0" stroke-width="3"/>
+  <!-- Independent corners / edge-midpoint handles; the center is translation only. -->
+  <g font-family="'DejaVu Sans Mono',monospace" font-size="14" font-weight="700"
+     text-anchor="middle" dominant-baseline="central">
+    <g fill="#b9ffca" stroke="#123523" stroke-width="2">
+      <circle cx="361" cy="150" r="15"/><circle cx="841" cy="87" r="15"/>
+      <circle cx="739" cy="421" r="15"/><circle cx="391" cy="373" r="15"/>
+    </g>
+    <g fill="#83caa0" stroke="#123523" stroke-width="2">
+      <circle cx="603" cy="101" r="14"/><circle cx="793" cy="255" r="14"/>
+      <circle cx="566" cy="391" r="14"/><circle cx="341" cy="255" r="14"/>
+    </g>
+    <g fill="#123623">
+      <text x="361" y="150">1</text><text x="841" y="87">2</text>
+      <text x="739" y="421">3</text><text x="391" y="373">4</text>
+      <text x="603" y="101">5</text><text x="793" y="255">6</text>
+      <text x="566" y="391">7</text><text x="341" y="255">8</text>
+    </g>
+    <circle cx="585" cy="247" r="19" fill="#f8d798" stroke="#593f19" stroke-width="2.5"/>
+    <text x="585" y="247" fill="#35240d" font-size="18">9</text>
+  </g>
 </svg>
