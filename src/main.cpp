@@ -19,6 +19,8 @@
 #include <QFontDatabase>
 #include <QScrollArea>
 #include <QFrame>
+#include <QMessageBox>
+#include <QSizePolicy>
 #include <QLocale>
 #include <QLineF>
 #include <QPainterPath>
@@ -34,6 +36,8 @@
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
 #include "pet_tail.hpp"
+#include "clock_flicker.hpp"
+#include "desktop_autostart.hpp"
 #include "matrix_rain.hpp"
 #include <QDir>
 #include <QFileInfo>
@@ -57,30 +61,12 @@
 #include <algorithm>
 #include <array>
 #include <unistd.h>
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
+// Xlib defines None as a macro; include this only after every Qt header.
+#include "desktop_workspace.hpp"
 
 namespace {
 constexpr int W = 480;
 constexpr int H = 320;
-
-// Request XFCE/X11 to show the desktop widget on all workspaces.
-void keepOnEveryDesktop(WId window) {
-    Display *display = XOpenDisplay(nullptr);
-    if (!display) return;
-    const Atom desktop = XInternAtom(display, "_NET_WM_DESKTOP", False);
-    XEvent event{};
-    event.xclient.type = ClientMessage;
-    event.xclient.window = static_cast<Window>(window);
-    event.xclient.message_type = desktop;
-    event.xclient.format = 32;
-    event.xclient.data.l[0] = 0xFFFFFFFFL;
-    event.xclient.data.l[1] = 1;
-    XSendEvent(display, DefaultRootWindow(display), False,
-               SubstructureNotifyMask | SubstructureRedirectMask, &event);
-    XFlush(display);
-    XCloseDisplay(display);
-}
 
 QString configFile() {
     return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
@@ -93,6 +79,8 @@ struct Settings {
     QString petFont = QStringLiteral("IBM Plex Mono");
     int petFontSize = pet::kDefaultFontPixels;
     int petStroke = pet::kDefaultStrokeStrength;
+    int timeFontSize = 97;
+    int dateFontSize = 39;
     QString pet = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     QColor green = QColor("#B0FFBB");
     QColor dim = QColor("#70BB8A");
@@ -108,7 +96,7 @@ struct Settings {
     int brightness = 84;
     bool musicResponse = true;
     bool typingResponse = true;
-    bool clockFlicker = true;
+    int flickerFrequency = crt::kDefaultFlickerFrequency;
     int pixelScale = 2;
 
     explicit Settings(QRect screen) {
@@ -139,6 +127,8 @@ struct Settings {
         petFont = s.value("appearance/pet_font", previousFont).toString();
         petFontSize = std::clamp(s.value("appearance/pet_font_size", petFontSize).toInt(), 30, 54);
         petStroke = std::clamp(s.value("appearance/pet_stroke", petStroke).toInt(), 0, 100);
+        timeFontSize = std::clamp(s.value("appearance/time_font_size", timeFontSize).toInt(), 68, 132);
+        dateFontSize = std::clamp(s.value("appearance/date_font_size", dateFontSize).toInt(), 26, 50);
         if (clockFont.trimmed().isEmpty()) clockFont = QStringLiteral("IBM Plex Mono");
         if (petFont.trimmed().isEmpty()) petFont = clockFont;
         pet = s.value("appearance/pet", pet).toString();
@@ -156,7 +146,11 @@ struct Settings {
         brightness = std::clamp(s.value("appearance/brightness", brightness).toInt(), 25, 100);
         musicResponse = s.value("pet/music_response", musicResponse).toBool();
         typingResponse = s.value("pet/typing_response", typingResponse).toBool();
-        clockFlicker = s.value("appearance/clock_flicker", clockFlicker).toBool();
+        // Read the old checkbox value on first migration, then use the new slider.
+        const int legacyFrequency = s.value("appearance/clock_flicker", true).toBool()
+                                    ? crt::kDefaultFlickerFrequency : 0;
+        flickerFrequency = std::clamp(
+            s.value("appearance/flicker_frequency", legacyFrequency).toInt(), 0, 100);
         pixelScale = std::clamp(s.value("appearance/pixel_scale", pixelScale).toInt(), 1, 4);
         if (!green.isValid()) green = QColor("#B0FFBB");
         if (!dim.isValid()) dim = QColor("#70BB8A");
@@ -175,6 +169,8 @@ struct Settings {
         s.setValue("appearance/pet_font", petFont);
         s.setValue("appearance/pet_font_size", petFontSize);
         s.setValue("appearance/pet_stroke", petStroke);
+        s.setValue("appearance/time_font_size", timeFontSize);
+        s.setValue("appearance/date_font_size", dateFontSize);
         s.setValue("appearance/pet", pet);
         s.setValue("appearance/primary", green.name());
         s.setValue("appearance/secondary", dim.name());
@@ -190,7 +186,8 @@ struct Settings {
         s.setValue("appearance/brightness", brightness);
         s.setValue("pet/music_response", musicResponse);
         s.setValue("pet/typing_response", typingResponse);
-        s.setValue("appearance/clock_flicker", clockFlicker);
+        s.setValue("appearance/flicker_frequency", flickerFrequency);
+        s.setValue("appearance/clock_flicker", flickerFrequency > 0); // downgrade compatibility
         s.setValue("appearance/pixel_scale", pixelScale);
         s.sync();
     }
@@ -214,15 +211,15 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, const pe
     text.setRenderHint(QPainter::TextAntialiasing, true);
 
     QFont time(cfg.clockFont);
-    time.setPixelSize(97);
+    time.setPixelSize(cfg.timeFontSize);
     time.setWeight(QFont::Bold);
     QFont date(cfg.clockFont);
-    date.setPixelSize(32);
+    date.setPixelSize(cfg.dateFontSize);
     date.setWeight(QFont::Bold);
     const auto now = QDateTime::currentDateTime();
     QColor timeColor = cfg.green;
     timeColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
-    QColor dateColor = cfg.dim;
+    QColor dateColor = cfg.dim.lighter(130);
     dateColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
     QColor petColor = cfg.green;
     petColor.setAlphaF(cfg.brightness / 100.0);
@@ -271,7 +268,7 @@ public:
         setMouseTracking(true);
         elapsed_.start();
         keyboard_ = std::make_unique<KeyboardActivity>([this] { edit(); });
-        flickerDue_ = QRandomGenerator::global()->bounded(55000, 85000);
+        scheduleNextFlicker(0);
         rippleDue_ = QRandomGenerator::global()->bounded(6500, 12000);
         connect(&tick_, &QTimer::timeout, this, [this] { updateState(); });
         tick_.start(40);
@@ -309,12 +306,12 @@ public:
             update();
         }
 
-        // Rare two-pulse phosphor flicker affects CLOCK only, not the pet.
+        // Only the clock flickers. Frequency 0 disables the effect.
         double intensity = 1.0;
-        if (cfg_.clockFlicker) {
+        if (cfg_.flickerFrequency > 0) {
             if (flickerStart_ < 0 && now >= flickerDue_) {
                 flickerStart_ = now;
-                flickerDue_ = now + QRandomGenerator::global()->bounded(55000, 85000);
+                scheduleNextFlicker(now);
             }
             if (flickerStart_ >= 0) {
                 static constexpr double pulses[] = {0.95, 0.38, 0.98, 0.24, 1.0};
@@ -359,13 +356,16 @@ public:
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setAttribute(Qt::WA_QuitOnClose, false);
         dialog->setWindowTitle("CRT Clock / Settings");
-        dialog->resize(470, 595);
+        // Size is calculated from content below instead of hard-coding a stale width.
         auto *layout = new QVBoxLayout(dialog);
         auto *scroll = new QScrollArea(dialog);
         scroll->setWidgetResizable(true);
         scroll->setFrameShape(QFrame::NoFrame);
         auto *fields = new QWidget(scroll);
         auto *form = new QFormLayout(fields);
+        form->setRowWrapPolicy(QFormLayout::WrapAllRows);
+        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        form->setSizeConstraint(QLayout::SetMinAndMaxSize);
         scroll->setWidget(fields);
         layout->addWidget(scroll, 1);
 
@@ -405,14 +405,14 @@ public:
         addSlider("Background opacity", cfg_.backgroundAlpha, 0, 180,
                   [](Settings &s, int x) { s.backgroundAlpha = x; });
 
-        auto *flicker = new QCheckBox("Rare two-pulse clock flicker", dialog);
-        flicker->setChecked(cfg_.clockFlicker);
-        form->addRow(flicker);
-        connect(flicker, &QCheckBox::toggled, dialog, [this](bool on) {
-            cfg_.clockFlicker = on;
-            if (!on) clockIntensity_ = 1;
-            redraw();
-        });
+        addSlider("Clock flicker frequency (0 = off, 100 = every 4s)",
+                  cfg_.flickerFrequency, 0, 100,
+                  [this](Settings &s, int value) {
+                      s.flickerFrequency = value;
+                      flickerStart_ = -1;
+                      clockIntensity_ = 1.0;
+                      scheduleNextFlicker(elapsed_.elapsed());
+                  });
 
         auto *typing = new QCheckBox("React to typing (priority over music)", dialog);
         typing->setChecked(cfg_.typingResponse);
@@ -437,6 +437,10 @@ public:
             cfg_.frame = on;
             redraw();
         });
+        auto *autostart = new QCheckBox("Start CRT Clock automatically at login", dialog);
+        autostart->setToolTip("Create a per-user XDG autostart entry. No background service.");
+        autostart->setChecked(desktop::autostartEnabled());
+        form->addRow(autostart);
 
         // QFontComboBox with MonospacedFonts used to discard font family
         // names not classified as fixed pitch by Qt/fontconfig. Use the full
@@ -446,6 +450,8 @@ public:
             auto *combo = new QComboBox(dialog);
             combo->setEditable(true);
             combo->setInsertPolicy(QComboBox::NoInsert);
+            combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            combo->setMinimumContentsLength(20);
             combo->addItems(QFontDatabase::families());
             combo->setCurrentText(initial);
             combo->setToolTip("All installed font families. You can also type a family name. "
@@ -462,6 +468,10 @@ public:
                 [](Settings &s, const QString &f) { s.clockFont = f; });
         addFont("Pet font", cfg_.petFont,
                 [](Settings &s, const QString &f) { s.petFont = f; });
+        addSlider("Time font size (px)", cfg_.timeFontSize, 68, 132,
+                  [](Settings &s, int x) { s.timeFontSize = x; });
+        addSlider("Date font size (px)", cfg_.dateFontSize, 26, 50,
+                  [](Settings &s, int x) { s.dateFontSize = x; });
         addSlider("Pet font size (px)", cfg_.petFontSize, 30, 54,
                   [](Settings &s, int x) { s.petFontSize = x; });
         addSlider("Pet stroke thickness", cfg_.petStroke, 0, 100,
@@ -469,9 +479,11 @@ public:
 
         auto *calibrate = new QPushButton("Edit 9 calibration handles (Super+Shift+C)", dialog);
         form->addRow(calibrate);
-        connect(calibrate, &QPushButton::clicked, dialog, [this, dialog] {
-            // Commit appearance values before closing settings so Cancel in the
-            // old dialog cannot undo a newly saved eight-point calibration.
+        connect(calibrate, &QPushButton::clicked, dialog, [this, dialog, autostart] {
+            if (!desktop::setAutostart(autostart->isChecked())) {
+                QMessageBox::warning(dialog, "CRT Clock", "Unable to update XDG autostart.");
+                return;
+            }
             cfg_.save();
             dialog->accept();
             edit();
@@ -490,7 +502,11 @@ public:
 
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
         layout->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog] {
+        connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, autostart] {
+            if (!desktop::setAutostart(autostart->isChecked())) {
+                QMessageBox::warning(dialog, "CRT Clock", "Unable to update XDG autostart.");
+                return;
+            }
             cfg_.save();
             dialog->accept();
         });
@@ -500,6 +516,16 @@ public:
             dialog->reject();
         });
         connect(dialog, &QObject::destroyed, this, [this] { settingsWindow_ = nullptr; });
+        // Let Qt measure text/fonts after construction, then fit the content
+        // within the available desktop. Labels are above fields, so there is
+        // no minimum width explosion from a long label + a wide slider.
+        const QRect available = QGuiApplication::primaryScreen()->availableGeometry();
+        fields->adjustSize();
+        const QSize desired = fields->sizeHint();
+        const int maxWidth = std::max(320, available.width() - 48);
+        const int maxHeight = std::max(380, available.height() - 64);
+        dialog->resize(std::min(std::max(desired.width() + 65, 460), maxWidth),
+                       std::min(std::max(desired.height() + 108, 520), maxHeight));
         dialog->show();
     }
     void edit() {
@@ -632,6 +658,14 @@ protected:
     }
 
 private:
+    void scheduleNextFlicker(qint64 now) {
+        const int interval = crt::flickerIntervalMs(cfg_.flickerFrequency);
+        // A small jitter retains the analogue feel without changing the
+        // approximate user-selected flicker frequency.
+        const int percent = QRandomGenerator::global()->bounded(90, 111);
+        flickerDue_ = interval > 0 ? now + qint64(interval) * percent / 100 : 0;
+    }
+
     void rebuildMatrix() {
         if (matrix_.active()) {
             const QImage glyphs = matrix_.image(cfg_.green, cfg_.brightness);
@@ -661,8 +695,16 @@ private:
         setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
         setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
         setGeometry(editing_ ? screen_ : bounds(cfg_));
+        // Publish the desktop hint before map, then notify XFWM4 again after
+        // its manage/map cycle. hide()/setWindowFlags() recreates X11 windows.
+        desktop::keepOnEveryWorkspace(winId());
         show();
-        QTimer::singleShot(0, this, [this] { keepOnEveryDesktop(winId()); });
+        QTimer::singleShot(0, this, [this] {
+            desktop::keepOnEveryWorkspace(winId());
+        });
+        QTimer::singleShot(350, this, [this] {
+            desktop::keepOnEveryWorkspace(winId());
+        });
         if (editing_) { raise(); activateWindow(); setFocus(); }
     }
 
