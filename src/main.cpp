@@ -1,6 +1,24 @@
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
+#include <QDBusConnection>
+#include <QDBusConnectionInterface>
+#include <QDBusMessage>
+#include <QDBusReply>
+#include <QDBusVariant>
+#include <QDialog>
+#include <QFormLayout>
+#include <QSlider>
+#include <QCheckBox>
+#include <QDialogButtonBox>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QLabel>
+#include <QHBoxLayout>
+#include <QColorDialog>
+#include <QList>
+#include "crt_style.hpp"
+#include "pet_poses.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QFontMetricsF>
@@ -42,6 +60,10 @@ struct Settings {
     int backgroundAlpha = 35;
     bool frame = false;
     bool scanlines = true;
+    int glow = 44;
+    int scanlineStrength = 24;
+    int brightness = 84;
+    bool musicResponse = true;
 
     explicit Settings(QRect screen) {
         const qreal x = screen.left() + screen.width() * .65;
@@ -66,6 +88,10 @@ struct Settings {
         backgroundAlpha = std::clamp(s.value("appearance/background_alpha", backgroundAlpha).toInt(), 0, 255);
         frame = s.value("appearance/border", frame).toBool();
         scanlines = s.value("appearance/scanlines", scanlines).toBool();
+        glow = std::clamp(s.value("appearance/glow", glow).toInt(), 0, 100);
+        scanlineStrength = std::clamp(s.value("appearance/scanline_strength", scanlineStrength).toInt(), 0, 100);
+        brightness = std::clamp(s.value("appearance/brightness", brightness).toInt(), 25, 100);
+        musicResponse = s.value("pet/music_response", musicResponse).toBool();
         if (!green.isValid()) green = QColor("#B0FFBB");
         if (!dim.isValid()) dim = QColor("#70BB8A");
         if (!background.isValid()) background = QColor("#092419");
@@ -87,6 +113,10 @@ struct Settings {
         s.setValue("appearance/background_alpha", backgroundAlpha);
         s.setValue("appearance/border", frame);
         s.setValue("appearance/scanlines", scanlines);
+        s.setValue("appearance/glow", glow);
+        s.setValue("appearance/scanline_strength", scanlineStrength);
+        s.setValue("appearance/brightness", brightness);
+        s.setValue("pet/music_response", musicResponse);
         s.sync();
     }
 };
@@ -97,70 +127,68 @@ QRect bounds(const Settings &cfg) {
     return p.boundingRect().adjusted(-12, -12, 12, 12).toAlignedRect();
 }
 
-void centered(QPainter &p, QRectF r, QString text, QFont font, QColor color) {
+void centered(QPainter &p, QRectF r, const QString &text, QFont font, QColor color) {
     while (font.pixelSize() > 12 && QFontMetricsF(font).horizontalAdvance(text) > r.width() - 8)
         font.setPixelSize(font.pixelSize() - 1);
     p.setFont(font);
-    const int align = Qt::AlignCenter | Qt::TextSingleLine;
-    QColor glow = color;
-    glow.setAlpha(25);
-    p.setPen(glow);
-    p.drawText(r.translated(-2, 0), align, text);
-    p.drawText(r.translated( 2, 0), align, text);
-    p.drawText(r.translated(0, -2), align, text);
-    p.drawText(r.translated(0,  2), align, text);
     p.setPen(color);
-    p.drawText(r, align, text);
+    p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
 QImage drawCanvas(const Settings &cfg, int pose) {
-    QImage image(W, H, QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::transparent);
-    QPainter p(&image);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    p.setRenderHint(QPainter::TextAntialiasing, true);
+    QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
+    glyphs.fill(Qt::transparent);
+    QPainter text(&glyphs);
+    text.setRenderHint(QPainter::Antialiasing, true);
+    text.setRenderHint(QPainter::TextAntialiasing, true);
 
-    if (cfg.backgroundAlpha) {
-        QColor bg = cfg.background;
-        bg.setAlpha(cfg.backgroundAlpha);
-        p.fillRect(image.rect(), bg);
+    QFont time(cfg.font);
+    time.setPixelSize(97);
+    time.setWeight(QFont::Bold);
+    time.setHintingPreference(QFont::PreferFullHinting);
+    QFont date(cfg.font);
+    date.setPixelSize(32);
+    date.setWeight(QFont::Medium);
+    QFont pet(cfg.font);
+    pet.setPixelSize(45);
+
+    const auto now = QDateTime::currentDateTime();
+    QColor primary = cfg.green;
+    primary.setAlphaF(cfg.brightness / 100.0);
+    QColor secondary = cfg.dim;
+    secondary.setAlphaF(cfg.brightness / 100.0);
+
+    centered(text, QRectF(12, 27, 456, 125), now.toString("HH:mm"), time, primary);
+    centered(text, QRectF(14, 154, 452, 52),
+             QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
+             date, secondary);
+    centered(text, QRectF(10, 217, 460, 82), petPose(cfg.pet, pose), pet, primary);
+    text.end();
+
+    return crtComposite(glyphs, cfg.background, cfg.backgroundAlpha, cfg.glow,
+                        cfg.scanlines ? cfg.scanlineStrength : 0, cfg.frame, cfg.dim);
+}
+
+// Read only the playback state over MPRIS; never capture audio or sound.
+bool musicIsPlaying() {
+    auto *iface = QDBusConnection::sessionBus().interface();
+    if (!iface) return false;
+    const QDBusReply<QStringList> services = iface->registeredServiceNames();
+    if (!services.isValid()) return false;
+    for (const QString &name : services.value()) {
+        if (!name.startsWith("org.mpris.MediaPlayer2.")) continue;
+        QDBusMessage request = QDBusMessage::createMethodCall(
+            name, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", "Get");
+        request << QStringLiteral("org.mpris.MediaPlayer2.Player")
+                << QStringLiteral("PlaybackStatus");
+        QDBusMessage reply = QDBusConnection::sessionBus().call(request, QDBus::Block, 200);
+        if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) continue;
+        const QVariant status = reply.arguments().first();
+        if (status.canConvert<QDBusVariant>()
+            && status.value<QDBusVariant>().variant().toString() == "Playing")
+            return true;
     }
-
-    QFont fTime(cfg.font);
-    fTime.setPixelSize(97);
-    fTime.setWeight(QFont::Bold);
-    QFont fDate(cfg.font);
-    fDate.setPixelSize(32);
-    fDate.setWeight(QFont::Medium);
-    QFont fPet(cfg.font);
-    fPet.setPixelSize(45);
-
-    QString face = cfg.pet;
-    if (pose == 1) face = QStringLiteral("(づ｡－‿‿－｡)づ");
-    if (pose == 2) face = QStringLiteral("(っ｡◕‿‿◕｡)っ");
-    if (pose == 3) face = QStringLiteral("(づ｡◕‿‿◕｡)っ");
-
-    const auto date = QDateTime::currentDateTime();
-    centered(p, QRectF(12, 27, 456, 125), date.toString("HH:mm"), fTime, cfg.green);
-    centered(p, QRectF(14, 154, 452, 52),
-             QLocale(QLocale::English).toString(date.date(), "ddd, dd MMM yyyy").toUpper(),
-             fDate, cfg.dim);
-    centered(p, QRectF(10, 217, 460, 82), face, fPet, cfg.green);
-
-    if (cfg.scanlines) {
-        QColor c = cfg.background;
-        c.setAlpha(12);
-        p.setPen(c);
-        for (int y = 1; y < H; y += 5) p.drawLine(0, y, W, y);
-    }
-    if (cfg.frame) {
-        QColor c = cfg.dim;
-        c.setAlpha(125);
-        p.setPen(QPen(c, 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRect(QRectF(1, 1, W - 2, H - 2));
-    }
-    return image;
+    return false;
 }
 
 class ClockWindow final : public QWidget {
@@ -171,11 +199,24 @@ public:
         setAttribute(Qt::WA_ShowWithoutActivating);
         setMouseTracking(true);
         connect(&tick_, &QTimer::timeout, this, [this] {
-            if (remaining_ > 0) {
-                if (--remaining_ == 0) pose_ = 0;
+            ++seconds_;
+            if (cfg_.musicResponse && seconds_ % 5 == 0)
+                musicPlaying_ = musicIsPlaying();
+
+            if (cfg_.musicResponse && musicPlaying_) {
+                steps_.clear();
+                pose_ = 8 + (seconds_ % 3);
+            } else if (!steps_.isEmpty()) {
+                pose_ = steps_.takeFirst();
             } else if (QRandomGenerator::global()->bounded(14) == 0) {
-                pose_ = 1 + QRandomGenerator::global()->bounded(3);
-                remaining_ = 1 + QRandomGenerator::global()->bounded(2);
+                const int choice = QRandomGenerator::global()->bounded(4);
+                if (choice == 0) steps_ = {1, 0};                      // Blink
+                if (choice == 1) steps_ = {3, 0, 3, 0};                // Wave
+                if (choice == 2) steps_ = {2, 4, 0};                   // Sway
+                if (choice == 3) steps_ = {4, 5, 6, 5, 7, 5, 4, 0};  // Turn, tail wag, return
+                pose_ = steps_.takeFirst();
+            } else {
+                pose_ = 0;
             }
             redraw();
         });
@@ -184,6 +225,93 @@ public:
     }
 
     void start() { editing_ = false; applyMode(); }
+
+    void settings() {
+        if (settingsWindow_) {
+            settingsWindow_->raise();
+            settingsWindow_->activateWindow();
+            return;
+        }
+        const Settings before = cfg_;
+        auto *dialog = new QDialog(nullptr);
+        settingsWindow_ = dialog;
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setWindowTitle("CRT Clock / Settings");
+        dialog->resize(370, 380);
+        auto *layout = new QVBoxLayout(dialog);
+        auto *form = new QFormLayout();
+        layout->addLayout(form);
+
+        auto addSlider = [this, dialog, form](const QString &label, int initial,
+                                              int lower, int upper, auto setter) {
+            auto *slider = new QSlider(Qt::Horizontal, dialog);
+            slider->setRange(lower, upper);
+            slider->setValue(initial);
+            auto *value = new QLabel(QString::number(initial), dialog);
+            auto *row = new QWidget(dialog);
+            auto *h = new QHBoxLayout(row);
+            h->setContentsMargins(0, 0, 0, 0);
+            h->addWidget(slider);
+            h->addWidget(value);
+            form->addRow(label, row);
+            connect(slider, &QSlider::valueChanged, dialog, [this, setter, value](int n) {
+                setter(cfg_, n);
+                value->setText(QString::number(n));
+                redraw();
+            });
+        };
+
+        addSlider("Phosphor glow", cfg_.glow, 0, 100,
+                  [](Settings &s, int x) { s.glow = x; });
+        addSlider("Scanlines", cfg_.scanlineStrength, 0, 100,
+                  [](Settings &s, int x) { s.scanlineStrength = x; s.scanlines = x > 0; });
+        addSlider("Text brightness", cfg_.brightness, 25, 100,
+                  [](Settings &s, int x) { s.brightness = x; });
+        addSlider("Background opacity", cfg_.backgroundAlpha, 0, 180,
+                  [](Settings &s, int x) { s.backgroundAlpha = x; });
+
+        auto *music = new QCheckBox("Dance while a MPRIS player is playing", dialog);
+        music->setChecked(cfg_.musicResponse);
+        form->addRow(music);
+        connect(music, &QCheckBox::toggled, dialog, [this](bool on) {
+            cfg_.musicResponse = on;
+            if (!on) musicPlaying_ = false;
+            redraw();
+        });
+
+        auto *border = new QCheckBox("Show border", dialog);
+        border->setChecked(cfg_.frame);
+        form->addRow(border);
+        connect(border, &QCheckBox::toggled, dialog, [this](bool on) {
+            cfg_.frame = on;
+            redraw();
+        });
+
+        auto *colorButton = new QPushButton("Text color…", dialog);
+        form->addRow(colorButton);
+        connect(colorButton, &QPushButton::clicked, dialog, [this, dialog] {
+            QColor c = QColorDialog::getColor(cfg_.green, dialog, "CRT phosphor color");
+            if (c.isValid()) {
+                cfg_.green = c;
+                cfg_.dim = c.darker(145);
+                redraw();
+            }
+        });
+
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
+        layout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog] {
+            cfg_.save();
+            dialog->accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, dialog, [this, dialog, before] {
+            cfg_ = before;
+            redraw();
+            dialog->reject();
+        });
+        connect(dialog, &QObject::destroyed, this, [this] { settingsWindow_ = nullptr; });
+        dialog->show();
+    }
     void edit() {
         if (editing_) return;
         before_ = cfg_.quad;
@@ -308,7 +436,10 @@ private:
     QImage frame_;
     QTimer tick_;
     QPointF last_;
-    int selected_ = -1, pose_ = 0, remaining_ = 0;
+    int selected_ = -1, pose_ = 0, seconds_ = 0;
+    QList<int> steps_;
+    bool musicPlaying_ = false;
+    QDialog *settingsWindow_ = nullptr;
     bool editing_ = false;
 };
 }
@@ -318,8 +449,9 @@ int main(int argc, char **argv) {
     app.setApplicationName("crt-clock");
 
     const QStringList args = app.arguments();
-    const QString command = args.contains("--calibrate") ? "calibrate" :
-                            args.contains("--quit") ? "quit" : "start";
+    const QString command = args.contains("--calibrate") ? "calibrate"
+                          : args.contains("--settings") ? "settings"
+                          : args.contains("--quit") ? "quit" : "start";
     const QString socket = QString("crt-clock-%1").arg(getuid());
 
     QLocalSocket existing;
@@ -341,6 +473,7 @@ int main(int argc, char **argv) {
             QObject::connect(client, &QLocalSocket::readyRead, &app, [client, &clock] {
                 QString cmd = QString::fromUtf8(client->readAll()).trimmed();
                 if (cmd == "calibrate") clock.edit();
+                else if (cmd == "settings") clock.settings();
                 else if (cmd == "quit") QApplication::quit();
                 else clock.start();
                 client->disconnectFromServer();
@@ -350,6 +483,9 @@ int main(int argc, char **argv) {
         }
     });
     if (command == "calibrate") clock.edit();
-    else clock.start();
+    else {
+        clock.start();
+        if (command == "settings") clock.settings();
+    }
     return app.exec();
 }

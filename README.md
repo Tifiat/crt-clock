@@ -18,6 +18,7 @@ To update: `cd crt-clock && git pull --ff-only && makepkg -si`.
 ```bash
 crt-clock                # start; a second invocation won't create a duplicate
 crt-clock --calibrate    # open calibration overlay
+crt-clock --settings     # CRT effect sliders and companion settings
 crt-clock --quit         # stop
 ```
 
@@ -35,13 +36,23 @@ Settings are stored after first calibration in `~/.config/crt-clock/config.ini`:
 - `background_alpha=35` (0 is fully transparent), `scanlines=true`, `border=false`
 - `pet=(づ｡◕‿‿◕｡)づ` is the original main pose
 
-No custom rendering pipeline, Python, Electron, WebView or telemetry. The clock renders a small image every second and transforms only this image.
+No Python, Electron, WebView or telemetry. The clock renders a small image every second and transforms only this image.
 
 **No autostart is installed by default.** After testing, add `crt-clock` to XFCE → Settings → Session and Startup → Application Autostart.
 
-## Limitations of v0.1
+
+## v0.2 CRT appearance and pet behavior
+
+- `crt-clock --settings` opens **native Qt sliders** for phosphor glow, scanline strength, text brightness, backing opacity and color. Border and music behavior are optional.
+- Changes preview live; Save writes `~/.config/crt-clock/config.ini`; Cancel restores the prior state. Your calibrated `[quad]` coordinates are never overwritten by appearance changes.
+- Visual rendering is offscreen at 480×320, and the resulting image alone is perspective-mapped. Two low-resolution soft glows, scanlines and a mild vignette approximate phosphor on the wallpaper monitor. No GPU shader, browser or continuous 60 FPS rendering.
+- The pet keeps its original normal expression. Other states: blink, wave, turn around, simple bunny-tail wag, and dance.
+- When **MPRIS** reports a player in `Playing` state (including AIMP if its MPRIS interface is enabled), the pet dances. No microphone monitoring or sound capture. Polling every five seconds. If MPRIS does not expose AIMP, the pet continues idle animations.
+- In calibration mode `Enter` saves, `Esc` cancels; `crt-clock --settings` works independently.
+
+## Limitations and testing
 
 - The initial 4 corners are approximate, not matched to your wallpaper until calibration.
 - Projective drawing and X11 window stacking are implemented, but require a test on the user's XFCE compositor.
 - Fallback font rendering may affect rare Unicode glyphs.
-- Animation is deliberately minimal: random brief blink, arm-fold and wave. More behaviors can follow after UI testing.
+- Animation uses low-frequency states; music synchronization depends on player MPRIS support. The backside and tail poses are preliminary and can be refined.
