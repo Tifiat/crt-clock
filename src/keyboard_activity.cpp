@@ -15,6 +15,7 @@ struct KeyboardActivity::Impl {
     std::vector<KeyCode> modifiers;
     std::function<void()> calibration;
     qint64 lastKeyTime = -1000000;
+    quint64 pressCount = 0;
 
     explicit Impl(std::function<void()> onCalibrate) : calibration(std::move(onCalibrate)) {
         display = XOpenDisplay(nullptr);
@@ -71,7 +72,7 @@ struct KeyboardActivity::Impl {
             const unsigned int previous = static_cast<unsigned char>(this->previous[byte]) & mask;
             if (pressed && !previous) {
                 lastKeyTime = now;
-                break;
+                ++pressCount;  // Only a count: no captured text or key values.
             }
         }
         previous = current;
@@ -88,3 +89,5 @@ void KeyboardActivity::poll(qint64 now) { impl_->poll(now); }
 bool KeyboardActivity::recentlyTyping(qint64 now) const {
     return impl_->display && (now - impl_->lastKeyTime < 950);
 }
+
+quint64 KeyboardActivity::pressCount() const { return impl_->pressCount; }
