@@ -1,15 +1,25 @@
 #pragma once
 
+#include "pet_poses.hpp"
+#include "pet_sequence.hpp"
 #include <QRandomGenerator>
 #include <QVector>
 #include <QtGlobal>
-#include <algorithm>
 #include <utility>
 
 namespace pet {
+
 enum class Activity { Idle, Music, Typing };
-enum class IdleAction { Blink, Curious, Wave, Stretch, Nap, Sway, Surprise };
-enum class MusicAction { HeadNod, TailWag, ArmWave, SideStep, Bounce };
+enum class IdleAction : int {
+    Blink, Peek, Smile, Surprise, Smug, Shy, Sleepy, Confused,
+    Greeting, Fidget, Celebrate, Indignant
+};
+enum class MusicAction : int {
+    HeadNod, TailWag, HandGroove, Bounce, Sway, HappyDance,
+    LookToBeat, BigDance
+};
+constexpr int kIdleActionCount = 12;
+constexpr int kMusicActionCount = 8;
 
 struct Frame {
     int pose;
@@ -18,66 +28,92 @@ struct Frame {
 using Story = QVector<Frame>;
 
 inline int duration(const Story &story) {
-    int total = 0;
-    for (const Frame &frame : story) total += frame.durationMs;
-    return total;
+    int sum = 0;
+    for (const Frame &f : story) sum += f.durationMs;
+    return sum;
 }
 
-// Idle actions are complete multi-second stories, not single-frame twitching.
-// A blink itself can be fast, but the complete action retains a coherent rhythm.
+// Authored multi-second activities. The 100-200ms blink is a brief
+// moment INSIDE a complete story, never an independent glitchy action.
 inline Story idleStory(IdleAction action) {
     switch (action) {
         case IdleAction::Blink:
-            return {{0, 650},{1, 175},{0, 700},{2, 650},{0, 450}};
-        case IdleAction::Curious:
-            return {{0, 450},{2, 900},{0, 350},{3, 900},{0, 450}};
-        case IdleAction::Wave:
-            return {{0, 450},{4, 500},{5, 500},{4, 500},{5, 500},{0, 550}};
-        case IdleAction::Stretch:
-            return {{0, 550},{6, 1100},{16, 800},{0, 800}};
-        case IdleAction::Nap:
-            return {{1, 600},{7, 1500},{1, 550},{0, 550}};
-        case IdleAction::Sway:
-            return {{0, 450},{22, 520},{23, 520},{22, 520},{23, 520},{0, 550}};
+            return {{F00, 600},{F01, 160},{F00, 700},{F01, 160},{F00, 900}};
+        case IdleAction::Peek:
+            return {{F00, 450},{F02, 650},{F00, 550},
+                    {F02, 700},{F00, 1400}};
+        case IdleAction::Smile:
+            return {{F00, 450},{F17, 850},{F04, 850},{F17, 850},{F00, 1000}};
         case IdleAction::Surprise:
-            return {{0, 500},{17, 950},{16, 750},{0, 700}};
+            return {{F00, 500},{F05, 900},{F15, 750},{F01, 170},{F00, 1100}};
+        case IdleAction::Smug:
+            return {{F00, 550},{F06, 950},{F09, 450},{F06, 1050},{F00, 1000}};
+        case IdleAction::Shy:
+            return {{F00, 450},{F08, 750},{F07, 850},{F08, 700},{F00, 850}};
+        case IdleAction::Sleepy:
+            return {{F00, 800},{F13, 1150},{F01, 190},{F13, 1450},{F00, 1400}};
+        case IdleAction::Confused:
+            return {{F00, 550},{F11, 800},{F02, 700},{F11, 700},{F00, 900}};
+        case IdleAction::Greeting:
+            return {{H00, 450},{H01, 500},{H00, 500},{H01, 500},{H00, 1050}};
+        case IdleAction::Fidget:
+            return {{H00, 500},{H02, 650},{H01, 650},
+                    {H02, 650},{H00, 1050}};
+        case IdleAction::Celebrate:
+            return {{F00, 600},{F04, 950},{F16, 750},{F04, 850},{F00, 1000}};
+        case IdleAction::Indignant:
+            return {{F00, 500},{F12, 850},{F05, 650},{F12, 700},{F00, 1000}};
     }
     return {};
 }
 
-// The tail stays in a fixed drawing slot. The older transient backside
-// silhouette is deliberately removed: it resembled a rendering glitch.
+// One full performance per selected action. Each music action is eventually
+// selected because the Animator runs a permutation of all eight actions.
 inline Story musicStory(MusicAction action) {
     switch (action) {
         case MusicAction::HeadNod:
-            return {{0, 400},{18, 450},{19, 450},{18, 450},
-                    {19, 450},{18, 450},{19, 450},{0, 450}};
+            return {{F00, 400},{NodDown, 400},{NodUp, 400},
+                    {NodDown, 400},{NodUp, 400},{NodDown, 400},
+                    {NodUp, 400},{F00, 850}};
         case MusicAction::TailWag:
-            return {{8, 500},{9, 145},{10, 145},{9, 145},{10, 145},
-                    {9, 145},{10, 145},{9, 145},{10, 145},
-                    {9, 145},{10, 145},{9, 145},{10, 145},
-                    {8, 550},{0, 500}};
-        case MusicAction::ArmWave:
-            return {{0, 450},{24, 450},{25, 450},{11, 450},
-                    {24, 450},{25, 450},{12, 450},{0, 450}};
-        case MusicAction::SideStep:
-            return {{0, 450},{20, 520},{21, 520},{20, 520},
-                    {21, 520},{20, 520},{0, 550}};
+            // The original 4fc9d30 dance turns the pet around BEFORE the
+            // central bunny tail starts wagging, then returns to face front.
+            return {{F00, 360},{H03, 260},{B00, 360},
+                    {B01, 145},{B02, 145},{B01, 145},{B02, 145},
+                    {B01, 145},{B02, 145},{B01, 145},{B02, 145},
+                    {B01, 145},{B02, 145},{B00, 380},
+                    {H03, 260},{F00, 360}};
+        case MusicAction::HandGroove:
+            return {{H00, 400},{H01, 450},{H02, 450},{H03, 450},
+                    {H01, 450},{H02, 450},{H03, 450},{H00, 700}};
         case MusicAction::Bounce:
-            return {{0, 500},{22, 500},{23, 500},{22, 500},
-                    {23, 500},{16, 550},{0, 500}};
+            return {{F00, 350},{BounceUp, 420},{BounceDown, 420},
+                    {BounceUp, 420},{BounceDown, 420},
+                    {BounceUp, 420},{BounceDown, 420},{F00, 620}};
+        case MusicAction::Sway:
+            return {{F00, 550},{SwayLeft, 500},{SwayRight, 500},
+                    {SwayLeft, 500},{SwayRight, 500},
+                    {SwayLeft, 500},{F00, 700}};
+        case MusicAction::HappyDance:
+            return {{F00, 450},{H04, 470},{H05, 470},{F16, 600},
+                    {H04, 470},{H05, 470},{F04, 600},{F00, 600}};
+        case MusicAction::LookToBeat:
+            return {{F00, 480},{F02, 480},{F00, 480},
+                    {F02, 480},{F00, 480},{F02, 480},{F00, 680}};
+        case MusicAction::BigDance:
+            return {{F00, 450},{H03, 500},{BounceUp, 480},
+                    {H04, 480},{BounceDown, 480},{H05, 480},
+                    {H03, 500},{F00, 780}};
     }
     return {};
 }
 
-// User preferred this quick tactile animation; it keeps priority over music.
 inline Story typingStory() {
-    return {{13, 115}, {14, 115}, {15, 115}, {14, 115}};
+    return {{T00, 115},{T01, 115},{T02, 115},{T01, 115}};
 }
 
 class Animator {
 public:
-    // Typing overrides music, and music overrides idle.
     bool advance(qint64 nowMs, bool typing, bool playing) {
         const Activity desired = typing ? Activity::Typing :
                                  playing ? Activity::Music : Activity::Idle;
@@ -85,18 +121,14 @@ public:
             activity_ = desired;
             story_.clear();
             frameIndex_ = 0;
-            nextFrame_ = nowMs;
             idleDue_ = nowMs + 1200;
             if (desired == Activity::Typing) begin(typingStory(), nowMs);
             else if (desired == Activity::Music) nextMusic(nowMs);
-            else pose_ = 0;
+            else pose_ = F00;
         }
 
-        if (activity_ == Activity::Idle && story_.isEmpty() && nowMs >= idleDue_) {
-            const auto action = static_cast<IdleAction>(
-                QRandomGenerator::global()->bounded(7));
-            begin(idleStory(action), nowMs);
-        }
+        if (activity_ == Activity::Idle && story_.isEmpty() && nowMs >= idleDue_)
+            begin(idleStory(static_cast<IdleAction>(idleCycle_.next())), nowMs);
 
         if (!story_.isEmpty() && nowMs >= nextFrame_) {
             ++frameIndex_;
@@ -105,7 +137,7 @@ public:
                 else if (activity_ == Activity::Typing) begin(typingStory(), nowMs);
                 else {
                     story_.clear();
-                    pose_ = 0;
+                    pose_ = F00;
                     idleDue_ = nowMs + QRandomGenerator::global()->bounded(6500, 14500);
                 }
             } else {
@@ -121,22 +153,14 @@ public:
 
     [[nodiscard]] int pose() const { return pose_; }
     [[nodiscard]] Activity activity() const { return activity_; }
-
 private:
     void nextMusic(qint64 nowMs) {
-        // Pick among the four OTHER dances, so two adjacent dances never repeat.
-        const int offset = QRandomGenerator::global()->bounded(1, 5);
-        lastMusicAction_ = (lastMusicAction_ + offset) % 5;
-        begin(musicStory(static_cast<MusicAction>(lastMusicAction_)), nowMs);
+        begin(musicStory(static_cast<MusicAction>(musicCycle_.next())), nowMs);
     }
-
     void begin(Story sequence, qint64 nowMs) {
         story_ = std::move(sequence);
         frameIndex_ = 0;
-        if (story_.isEmpty()) {
-            pose_ = 0;
-            return;
-        }
+        if (story_.isEmpty()) { pose_ = F00; return; }
         pose_ = story_[0].pose;
         nextFrame_ = nowMs + story_[0].durationMs;
     }
@@ -144,9 +168,10 @@ private:
     Activity activity_ = Activity::Idle;
     Story story_;
     int frameIndex_ = 0;
-    int pose_ = 0;
+    int pose_ = F00;
     int lastPose_ = -1;
-    int lastMusicAction_ = -1;
+    ShuffleBag musicCycle_{kMusicActionCount};
+    ShuffleBag idleCycle_{kIdleActionCount};
     qint64 nextFrame_ = 0;
     qint64 idleDue_ = 8500;
 };

@@ -30,6 +30,7 @@
 #include "crt_style.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "matrix_rain.hpp"
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -185,7 +186,7 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, quint64 pressCount) {
+QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -210,8 +211,7 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, quint64 
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
-    pet::paint(text, QRectF(10, 217, 460, 82), cfg.font,
-               cfg.pet, pose, petColor, static_cast<unsigned>(pressCount % 12));
+    pet::paint(text, QRectF(10, 217, 460, 82), cfg.font, cfg.pet, pose, petColor);
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -270,9 +270,16 @@ public:
         const bool typing = cfg_.typingResponse && keyboard_->recentlyTyping(now);
         bool dirty = animator_.advance(now, typing, cfg_.musicResponse && musicPlaying_);
         const quint64 count = keyboard_->pressCount();
-        if (count != keyPressCount_) {
+        if (count > keyPressCount_) {
+            // Cap a huge burst after a stalled UI tick; never record key values.
+            const quint64 newPresses = std::min<quint64>(count - keyPressCount_, 64);
+            for (quint64 i = 0; i < newPresses; ++i)
+                matrix_.addPress(now);
             keyPressCount_ = count;
-            dirty = true; // Change the single Japanese glyph on every new press.
+        }
+        if (matrix_.advance(now, typing)) {
+            matrixFrame_ = matrix_.image();
+            update();
         }
 
         // Rare two-pulse phosphor flicker affects CLOCK only, not the pet.
@@ -454,6 +461,7 @@ protected:
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         const QPointF origin(geometry().topLeft());
         perspective::draw(p, frame_, cfg_.quad, origin);
+        if (matrix_.active()) perspective::draw(p, matrixFrame_, cfg_.quad, origin);
         perspective::scanlines(p, cfg_.quad, origin,
                               cfg_.scanlines ? cfg_.scanlineStrength : 0);
         perspective::grille(p, cfg_.quad, origin, cfg_.grilleStrength);
@@ -568,7 +576,7 @@ protected:
 
 private:
     void redraw() {
-        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, keyPressCount_);
+        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_);
         update();
     }
     void applyMode() {
@@ -591,6 +599,8 @@ private:
     Settings cfg_;
     perspective::Handles before_{};
     QImage frame_;
+    MatrixRain matrix_;
+    QImage matrixFrame_;
     QTimer tick_;
     QElapsedTimer elapsed_;
     std::unique_ptr<KeyboardActivity> keyboard_;
