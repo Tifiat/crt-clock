@@ -18,6 +18,7 @@
 #include <QComboBox>
 #include <QFontDatabase>
 #include <QScrollArea>
+#include <QFrame>
 #include <QLocale>
 #include <QLineF>
 #include <QPainterPath>
@@ -90,8 +91,8 @@ struct Settings {
     perspective::Handles quad;
     QString clockFont = QStringLiteral("IBM Plex Mono");
     QString petFont = QStringLiteral("IBM Plex Mono");
-    int petFontSize = 43;
-    int petStroke = 25;
+    int petFontSize = pet::kDefaultFontPixels;
+    int petStroke = pet::kDefaultStrokeStrength;
     QString pet = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     QColor green = QColor("#B0FFBB");
     QColor dim = QColor("#70BB8A");
