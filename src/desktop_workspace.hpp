@@ -48,4 +48,46 @@ inline void keepOnEveryWorkspace(WId nativeWindow) {
     XFlush(dpy);
     XCloseDisplay(dpy);
 }
+
+// Read the state back from XFWM4. Window managers may reset EWMH workspace
+// flags when a settings dialog takes focus or when a Qt::Tool is remapped.
+// One of the two standardized indicators is sufficient.
+inline bool isOnEveryWorkspace(WId nativeWindow) {
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) return false;
+    const Window window = static_cast<Window>(nativeWindow);
+    bool assignedEverywhere = false;
+
+    const Atom desktop = XInternAtom(dpy, "_NET_WM_DESKTOP", False);
+    Atom actualType = None;
+    int actualFormat = 0;
+    unsigned long items = 0, bytesAfter = 0;
+    unsigned char *data = nullptr;
+    if (XGetWindowProperty(dpy, window, desktop, 0, 1, False, XA_CARDINAL,
+                           &actualType, &actualFormat, &items, &bytesAfter, &data)
+        == Success) {
+        assignedEverywhere = actualType == XA_CARDINAL && actualFormat == 32 &&
+                             items >= 1 && data != nullptr &&
+                             *reinterpret_cast<unsigned long *>(data) == 0xFFFFFFFFUL;
+    }
+    if (data) XFree(data);
+
+    bool sticky = false;
+    const Atom state = XInternAtom(dpy, "_NET_WM_STATE", False);
+    const Atom stateSticky = XInternAtom(dpy, "_NET_WM_STATE_STICKY", False);
+    actualType = None;
+    actualFormat = 0;
+    items = bytesAfter = 0;
+    data = nullptr;
+    if (XGetWindowProperty(dpy, window, state, 0, 64, False, XA_ATOM,
+                           &actualType, &actualFormat, &items, &bytesAfter, &data)
+        == Success && actualType == XA_ATOM && actualFormat == 32 && data) {
+        const auto *atoms = reinterpret_cast<Atom *>(data);
+        for (unsigned long i = 0; i < items; ++i)
+            if (atoms[i] == stateSticky) { sticky = true; break; }
+    }
+    if (data) XFree(data);
+    XCloseDisplay(dpy);
+    return assignedEverywhere || sticky;
+}
 } // namespace desktop

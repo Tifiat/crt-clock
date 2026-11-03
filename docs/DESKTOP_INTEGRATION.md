@@ -22,7 +22,8 @@ Do not create a system-level service or silently enable autostart during package
 2. Send `_NET_WM_DESKTOP` ClientMessage to the root window, requesting the same value after mapping.
 3. Also request `_NET_WM_STATE_STICKY` with a `_NET_WM_STATE_ADD` ClientMessage, because some X11 window managers need a separate sticky hint.
 4. Repeat post-map requests shortly after mapping, in case the WM has not processed the initial request yet.
-5. Reapply from `ClockWindow::applyMode` whenever the window is recreated during calibration, cancel, or settings.
+5. Reapply from `ClockWindow::applyMode` whenever the window is recreated during calibration/cancel. Also reassert on settings show and on settings destruction, with additional WM-processing delays.
+6. Read back `_NET_WM_DESKTOP` / `_NET_WM_STATE_STICKY` every three seconds and repair a lost assignment without restarting the widget. Only do this on the live window ID; avoid triggering hide/show or resetting calibration.
 
 This is a **WM request, not a guaranteed override**. If XFCE still puts the widget on one workspace, check with `xprop` (click on the widget and inspect `_NET_WM_DESKTOP` and `_NET_WM_STATE`), compare with the WM's sticky window action, and inspect `xfwm4` behavior. Do not confuse workspace stickiness with autostart.
 
