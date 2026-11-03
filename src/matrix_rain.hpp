@@ -61,7 +61,7 @@ public:
     [[nodiscard]] bool active() const { return !drops_.isEmpty(); }
     [[nodiscard]] int glyphCount() const { return drops_.size(); }
 
-    QImage image() const {
+    QImage image(QColor phosphor = QColor("#B8FFBF"), int brightness = 100) const {
         QImage layer(CanvasWidth, CanvasHeight,
                      QImage::Format_ARGB32_Premultiplied);
         layer.fill(Qt::transparent);
@@ -70,8 +70,9 @@ public:
         for (const Drop &drop : drops_) {
             const qreal fade = std::clamp((drop.y - VanishY) / 80.0, 0.0, 1.0);
             if (fade <= 0.0) continue;
-            QColor color("#B8FFBF");
-            color.setAlphaF(fade * 0.98);
+            QColor color(phosphor);
+            color.setAlphaF(fade * 0.98 *
+                            std::clamp(brightness, 0, 100) / 100.0);
             japanese::drawGlyph(p,
                 QRectF(FirstX + drop.column * Cell, drop.y, Cell, Cell),
                 drop.glyph, color);

@@ -8,6 +8,8 @@
 #include "pet_animation.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "pet_tail.hpp"
+#include "crt_style.hpp"
 #include "matrix_rain.hpp"
 #include "perspective.hpp"
 
@@ -28,7 +30,8 @@ int main() {
             "approved pose grid changed");
     require(pet::kFrontColumns * pet::kFrontCellPixels == 310,
             "silhouette is no longer compact");
-    require(pet::kFontPixels == 41, "fixed pet font changed");
+    require(pet::kDefaultFontPixels == 43 && pet::kDefaultStrokeStrength == 25,
+            "default pet appearance changed");
 
     // Compare every approved pose, including historical backside tail frames.
     for (int id = 0; id < pet::kPoseCount; ++id) {
@@ -62,30 +65,46 @@ int main() {
     for (int id = pet::T00; id <= pet::T02; ++id)
         require(pet::frame(id).typing, "typing activity pose missing");
 
-    // Front-tail joy is a separate illustration at a fixed position.
-    // It must not change ten-slot text or affect the existing back-facing dance.
-    require(pet::kPoseCount == 39, "joy pose catalog size");
-    const auto joyLeft = pet::frame(pet::JoyTailLeft);
-    const auto joyRight = pet::frame(pet::JoyTailRight);
-    require(joyLeft.frontTail && joyRight.frontTail, "joy tail not enabled");
-    require(!joyLeft.back && !joyRight.back, "joy is still front-facing");
-    require(joyLeft.line == pet::frame(pet::F04).line &&
-            joyRight.line == pet::frame(pet::F04).line,
-            "joy tails must not alter the happy face");
-    require(joyLeft.tailDx < joyRight.tailDx &&
-            joyLeft.tailDy < joyRight.tailDy, "joy tail does not wag");
-    for (int id = 0; id < pet::JoyTailLeft; ++id)
-        require(!pet::frame(id).frontTail, "tail leaked into another activity");
+    // Happy eyes drive the same tail animation in ANY story, not just a
+    // handful of dedicated poses in Celebrate.
+    require(pet::kPoseCount == 39, "stable pose IDs must be preserved");
+    require(pet::hasJoyfulEyes(pet::frame(pet::F04)), "happy eyes must wag");
+    require(pet::hasJoyfulEyes(pet::frame(pet::F16)), "laughing eyes must wag");
+    require(pet::hasJoyfulEyes(pet::frame(pet::H04)), "happy hand pose must wag");
+    require(pet::hasJoyfulEyes(pet::frame(pet::H05)), "happy opposite hand pose must wag");
+    require(!pet::hasJoyfulEyes(pet::frame(pet::F00)), "normal eyes must not wag");
+    require(!pet::hasJoyfulEyes(pet::frame(pet::B01)), "back-facing tail is independent");
 
+    pet::JoyTail tail;
+    require(!tail.advance(1000, true) && !tail.visible(), "no tail on first frame");
+    require(!tail.advance(1040, true) && !tail.visible(), "wait a second frame");
+    require(tail.advance(1080, true) && tail.visible(), "tail appears after two frames");
+    const int firstSide = tail.side();
+    require(!tail.advance(1120, true), "tail should not move too quickly");
+    require(tail.advance(1240, true) && tail.side() == -firstSide,
+            "tail must alternate continuously while happy");
+    require(tail.advance(1400, true) && tail.side() == firstSide,
+            "tail must wag multiple cycles while happy");
+    require(tail.advance(1440, false) && !tail.visible(),
+            "tail disappears the instant joyful eyes close");
+    require(!tail.advance(1480, true) && !tail.visible(), "delay resets for next joy");
+    require(!tail.advance(1520, true) && !tail.visible(), "second delay tick");
+    require(tail.advance(1560, true) && tail.visible(), "tail restarts on third tick");
+
+    // Celebration stays extended but uses ordinary happy poses, not a
+    // special 700ms tail blip. The tail follows the eyes automatically.
     const auto celebration = pet::idleStory(pet::IdleAction::Celebrate);
-    require(pet::duration(celebration) == 4850,
-            "celebration must be extended by exactly 700ms");
-    require(celebration.size() == 9, "expected four quick wagging frames");
-    for (int i = 0; i < 4; ++i)
-        require(celebration[i + 2].pose ==
-                    (i % 2 == 0 ? pet::JoyTailLeft : pet::JoyTailRight) &&
-                    celebration[i + 2].durationMs == 175,
-                "joy wag needs two alternating cycles");
+    require(pet::duration(celebration) == 4850, "celebration duration changed");
+    require(celebration.size() == 5, "celebration should have five clear steps");
+    require(celebration[1].pose == pet::F04 &&
+            celebration[1].durationMs == 1650, "celebration happy hold missing");
+
+    // 0 is slow, 100 is fast. Static scanlines do not use this duration.
+    require(perspective::sweepDurationMs(0) == 5000, "slow sweep");
+    require(perspective::sweepDurationMs(55) == 2525, "default sweep");
+    require(perspective::sweepDurationMs(100) == 500, "fast sweep");
+    require(perspective::sweepDurationMs(-1) == 5000, "sweep clamp low");
+    require(perspective::sweepDurationMs(101) == 500, "sweep clamp high");
 
     // Every idle and music story is complete, in range, and returns to neutral.
     for (int n = 0; n < pet::kIdleActionCount; ++n) {
@@ -151,6 +170,23 @@ int main() {
     matrix.advance(40, true);
     require(matrix.image().width() == MatrixRain::CanvasWidth,
             "Matrix canvas dimensions changed");
+    const auto redRain = matrix.image(QColor("#FF0000"), 90);
+    const auto polishedRain = crtComposite(redRain, Qt::transparent, 0,
+                                           44, 2, false, QColor("#808080"));
+    require(polishedRain.width() == MatrixRain::CanvasWidth,
+            "processed Matrix canvas must match original CRT canvas");
+    bool hasRedPixels = false;
+    for (int y = 0; y < redRain.height(); ++y) {
+        for (int x = 0; x < redRain.width(); ++x) {
+            const QColor pixel = redRain.pixelColor(x, y);
+            if (pixel.alpha() > 0 && pixel.red() > pixel.green()) {
+                hasRedPixels = true;
+                break;
+            }
+        }
+        if (hasRedPixels) break;
+    }
+    require(hasRedPixels, "Matrix must use selected user phosphor color");
     for (int t = 80; t <= 7000; t += 40)
         matrix.advance(t, false);
     require(!matrix.active(), "Matrix glyphs should fade and vanish");

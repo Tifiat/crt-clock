@@ -7,9 +7,11 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 ## Features
 
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
-- **CRT effects:** phosphor glow, scanlines, pixel grid, adjustable colors, brightness, and transparency.
-- **Animated pet:** idle expressions, MPRIS music dances, and typing reactions. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
+- **Animated pet:** idle expressions, continuous joyful-eye tail wag, MPRIS music dances, and typing reactions. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
 - **Desktop integration:** stays on all workspaces where supported by the window manager, with a right-click settings menu.
+
+**Appearance:** choose clock/date and pet fonts independently, adjust pet size/stroke thickness and the moving-scanline speed in Settings. The font pickers accept any installed font family or a manually typed name.
 
 ## Install (Arch Linux)
 
@@ -54,7 +56,7 @@ crt-clock --quit
 crt-clock >/dev/null 2>&1 &
 ```
 
-The `stash` step protects the local `PKGBUILD` version change that `makepkg` may leave behind. Restart the widget after installation.
+The `stash` step protects the local `PKGBUILD` version change that `makepkg` may leave behind. Restart the widget after installation (also after adding new system fonts); calibration and configuration are retained.
 
 ## Build & test
 

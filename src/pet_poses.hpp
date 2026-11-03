@@ -13,7 +13,8 @@ constexpr int kFrontColumns = 10;
 constexpr int kBackColumns = 11;
 constexpr int kFrontCellPixels = 31;
 constexpr int kBackCellPixels = 28;
-constexpr int kFontPixels = 41;
+constexpr int kDefaultFontPixels = 43;
+constexpr int kDefaultStrokeStrength = 25;
 constexpr int kPoseCount = 39;
 
 enum PoseId : int {
@@ -30,9 +31,6 @@ struct Pose {
     QString line = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     bool back = false;
     bool typing = false;
-    bool frontTail = false;
-    int tailDx = 0;
-    int tailDy = 0;
     int headDx = 0;
     int headDy = 0;
     int bodyDx = 0;
@@ -79,19 +77,10 @@ inline Pose frame(int id) {
         case T00: p.typing = true; break;
         case T01: p.line = QStringLiteral("(っ｡◕‿‿◕｡)っ"); p.typing = true; break;
         case T02: p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ"); p.typing = true; break;
-        // Front-facing joy wag uses a separate dot: never extend the text grid.
+        // Kept as stable v0.5.1 IDs, but the tail is now tied to joyful eyes
+        // by JoyTail; these legacy frames no longer impose their own wag.
         case JoyTailLeft:
-            p.line = QStringLiteral("(づ｡>‿‿<｡)づ");
-            p.frontTail = true;
-            p.tailDx = -5;
-            p.tailDy = -2;
-            break;
-        case JoyTailRight:
-            p.line = QStringLiteral("(づ｡>‿‿<｡)づ");
-            p.frontTail = true;
-            p.tailDx = 5;
-            p.tailDy = 2;
-            break;
+        case JoyTailRight: p.line = QStringLiteral("(づ｡>‿‿<｡)づ"); break;
         default: break;  // F00/H00 are the original reference pose
     }
     return p;
