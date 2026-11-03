@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 #include "pet_animation.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
@@ -40,6 +41,22 @@ int main() {
     require(pet::frame(9).tailOffset != pet::frame(10).tailOffset, "tail does not wag");
     require(pet::frame(13).typing && pet::frame(14).typing &&
             pet::frame(15).typing, "typing indicator missing");
+
+    // One shuffled cycle must contain each action once, in random order.
+    for (const int count : {kIdleActionCount, kMusicActionCount}) {
+        pet::ShuffleBag bag(count);
+        for (int cycle = 0; cycle < 25; ++cycle) {
+            std::vector<bool> seen(count, false);
+            for (int i = 0; i < count; ++i) {
+                const int id = bag.next();
+                require(id >= 0 && id < count, "invalid shuffled action");
+                require(!seen[id], "duplicate action within cycle");
+                seen[id] = true;
+            }
+            for (const bool selected : seen)
+                require(selected, "some action never selected in cycle");
+        }
+    }
 
     // Every non-typing story is a complete action lasting several seconds.
     for (int n=0; n<7; ++n)
