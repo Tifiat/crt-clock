@@ -38,6 +38,8 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMouseEvent>
+#include <QContextMenuEvent>
+#include <QMenu>
 #include <QPainter>
 #include <QPolygonF>
 #include <QRandomGenerator>
@@ -50,10 +52,30 @@
 #include <algorithm>
 #include <array>
 #include <unistd.h>
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
 
 namespace {
 constexpr int W = 480;
 constexpr int H = 320;
+
+// Request XFCE/X11 to show the desktop widget on all workspaces.
+void keepOnEveryDesktop(WId window) {
+    Display *display = XOpenDisplay(nullptr);
+    if (!display) return;
+    const Atom desktop = XInternAtom(display, "_NET_WM_DESKTOP", False);
+    XEvent event{};
+    event.xclient.type = ClientMessage;
+    event.xclient.window = static_cast<Window>(window);
+    event.xclient.message_type = desktop;
+    event.xclient.format = 32;
+    event.xclient.data.l[0] = 0xFFFFFFFFL;
+    event.xclient.data.l[1] = 1;
+    XSendEvent(display, DefaultRootWindow(display), False,
+               SubstructureNotifyMask | SubstructureRedirectMask, &event);
+    XFlush(display);
+    XCloseDisplay(display);
+}
 
 QString configFile() {
     return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
@@ -293,6 +315,7 @@ public:
         auto *dialog = new QDialog(nullptr);
         settingsWindow_ = dialog;
         dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setAttribute(Qt::WA_QuitOnClose, false);
         dialog->setWindowTitle("CRT Clock / Settings");
         dialog->resize(370, 380);
         auto *layout = new QVBoxLayout(dialog);
@@ -369,7 +392,7 @@ public:
         connect(fontMenu, &QFontComboBox::currentFontChanged, dialog,
                 [this](const QFont &f) { cfg_.font = f.family(); redraw(); });
 
-        auto *calibrate = new QPushButton("Edit 8 perspective points (Super+Shift+C)", dialog);
+        auto *calibrate = new QPushButton("Edit 9 calibration handles (Super+Shift+C)", dialog);
         form->addRow(calibrate);
         connect(calibrate, &QPushButton::clicked, dialog, [this, dialog] {
             // Commit appearance values before closing settings so Cancel in the
@@ -438,6 +461,16 @@ protected:
             p.drawText(QRectF(point.x()-10, point.y()-10, 20, 20),
                        Qt::AlignCenter, QString::number(i+1));
         }
+        // Nine handles: eight independent contour points and one translation handle.
+        const QPointF move = perspective::center(cfg_.quad) - origin;
+        p.setPen(QPen(QColor("#102A1C"), 2));
+        p.setBrush(selected_ == 8 ? QColor("#FFFFA1") : QColor("#FFCA82"));
+        p.drawEllipse(move, 13, 13);
+        p.setPen(QColor("#102A1C"));
+        QFont handleFont(cfg_.font); handleFont.setPixelSize(12); handleFont.setBold(true);
+        p.setFont(handleFont);
+        p.drawText(QRectF(move.x()-12, move.y()-12, 24, 24),
+                   Qt::AlignCenter, QStringLiteral("9"));
         QRect top(14, 14, std::min(width()-28, 890), 80);
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(5, 24, 15, 230));
@@ -446,12 +479,18 @@ protected:
         QFont f(cfg_.font); f.setPixelSize(15); p.setFont(f);
         p.drawText(top.adjusted(12, 6, -6, -6), Qt::AlignLeft | Qt::TextWordWrap,
             QStringLiteral("CRT-CLOCK / КАЛИБРОВКА\n"
-                           "8 точек: углы и середины сторон • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
+                           "8 крайних: деформация • центр 9: перенос • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
     }
 
     void mousePressEvent(QMouseEvent *e) override {
         if (!editing_ || e->button() != Qt::LeftButton) return;
         QPointF pt = e->position() + QPointF(geometry().topLeft());
+        if (QLineF(pt, perspective::center(cfg_.quad)).length() < 20) {
+            selected_ = 8;
+            last_ = pt;
+            update();
+            return;
+        }
         for (int i = 0; i < 8; ++i) {
             if (QLineF(pt, cfg_.quad[i]).length() < 20) {
                 selected_ = i;
@@ -460,18 +499,14 @@ protected:
                 return;
             }
         }
-        QPolygonF polygon = perspective::outline(cfg_.quad);
-        if (polygon.containsPoint(pt, Qt::OddEvenFill)) {
-            selected_ = 4; // Drag entire quad.
-            last_ = pt;
-        }
+        // Only the center handle translates the whole widget.
     }
     void mouseMoveEvent(QMouseEvent *e) override {
         if (!editing_ || selected_ < 0) return;
         QPointF pt = e->position() + QPointF(geometry().topLeft());
         QPointF clamped(std::clamp(pt.x(), qreal(screen_.left()+2), qreal(screen_.right()-2)),
                         std::clamp(pt.y(), qreal(screen_.top()+2), qreal(screen_.bottom()-2)));
-        if (selected_ < 4) cfg_.quad[selected_] = clamped;
+        if (selected_ < 8) cfg_.quad[selected_] = clamped;
         else {
             QPointF delta = clamped - last_;
             bool fits = true;
@@ -484,6 +519,19 @@ protected:
     }
     void mouseReleaseEvent(QMouseEvent *e) override {
         if (e->button() == Qt::LeftButton) selected_ = -1;
+    }
+    void contextMenuEvent(QContextMenuEvent *e) override {
+        if (editing_) return;
+        QMenu menu(this);
+        auto *settingsAction = menu.addAction(QStringLiteral("Настройки CRT"));
+        auto *calibrateAction = menu.addAction(QStringLiteral("Калибровка перспективы"));
+        menu.addSeparator();
+        auto *quitAction = menu.addAction(QStringLiteral("Закрыть виджет"));
+        QAction *selected = menu.exec(e->globalPos());
+        if (selected == settingsAction) settings();
+        else if (selected == calibrateAction) edit();
+        else if (selected == quitAction) QApplication::quit();
+        e->accept();
     }
     void keyPressEvent(QKeyEvent *e) override {
         if (!editing_) return;
@@ -511,13 +559,14 @@ private:
         Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint;
         if (editing_) flags |= Qt::WindowStaysOnTopHint;
         else flags |= Qt::WindowDoesNotAcceptFocus |
-                      Qt::WindowTransparentForInput | Qt::WindowStaysOnBottomHint;
+                      Qt::WindowStaysOnBottomHint;
         setWindowFlags(flags);
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
         setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
         setGeometry(editing_ ? screen_ : bounds(cfg_));
         show();
+        QTimer::singleShot(0, this, [this] { keepOnEveryDesktop(winId()); });
         if (editing_) { raise(); activateWindow(); setFocus(); }
     }
 
@@ -545,6 +594,7 @@ private:
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     app.setApplicationName("crt-clock");
+    app.setQuitOnLastWindowClosed(false);
 
     const QStringList args = app.arguments();
     const QString command = args.contains("--calibrate") ? "calibrate"
