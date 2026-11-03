@@ -278,6 +278,13 @@ public:
     void updateState() {
         const qint64 now = elapsed_.elapsed();
         keyboard_->poll(now);
+        // XFWM4 may silently move a Qt::Tool back to the active workspace,
+        // particularly when a settings dialog changes window focus. Repair
+        // only when the WM no longer advertises sticky/all-workspace state.
+        if (now >= nextWorkspaceCheck_) {
+            nextWorkspaceCheck_ = now + 3000;
+            restoreWorkspaceStickiness();
+        }
         if (cfg_.musicResponse && now >= nextMusicCheck_) {
             musicPlaying_ = musicIsPlaying();
             nextMusicCheck_ = now + 3000;
@@ -515,7 +522,14 @@ public:
             redraw();
             dialog->reject();
         });
-        connect(dialog, &QObject::destroyed, this, [this] { settingsWindow_ = nullptr; });
+        connect(dialog, &QObject::destroyed, this, [this] {
+            settingsWindow_ = nullptr;
+            // The settings window may change how XFWM4 handles our tool
+            // window. Reassert affinity after dialog teardown and WM updates.
+            QTimer::singleShot(0, this, [this] { restoreWorkspaceStickiness(); });
+            QTimer::singleShot(250, this, [this] { restoreWorkspaceStickiness(); });
+            QTimer::singleShot(900, this, [this] { restoreWorkspaceStickiness(); });
+        });
         // Let Qt measure text/fonts after construction, then fit the content
         // within the available desktop. Labels are above fields, so there is
         // no minimum width explosion from a long label + a wide slider.
@@ -527,6 +541,7 @@ public:
         dialog->resize(std::min(std::max(desired.width() + 65, 460), maxWidth),
                        std::min(std::max(desired.height() + 108, 520), maxHeight));
         dialog->show();
+        QTimer::singleShot(0, this, [this] { restoreWorkspaceStickiness(); });
     }
     void edit() {
         if (editing_) return;
@@ -658,6 +673,11 @@ protected:
     }
 
 private:
+    void restoreWorkspaceStickiness() {
+        if (isVisible() && !desktop::isOnEveryWorkspace(winId()))
+            desktop::keepOnEveryWorkspace(winId());
+    }
+
     void scheduleNextFlicker(qint64 now) {
         const int interval = crt::flickerIntervalMs(cfg_.flickerFrequency);
         // A small jitter retains the analogue feel without changing the
@@ -723,6 +743,7 @@ private:
     int selected_ = -1;
     quint64 keyPressCount_ = 0;
     qint64 nextMusicCheck_ = 0;
+    qint64 nextWorkspaceCheck_ = 0;
     qint64 rippleDue_ = 10000;
     qint64 rippleStart_ = -1;
     qint64 flickerDue_ = 60000;
