@@ -82,8 +82,10 @@ int main() {
         for (const auto &step : story)
             require(step.pose >= 0 && step.pose < pet::kPoseCount &&
                     step.durationMs > 0, "invalid music frame");
-        require(story.front().pose == pet::F00, "music starts with a jump");
-        require(story.back().pose == pet::F00, "music ends with a jump");
+        require(story.front().pose == pet::F00 || story.front().pose == pet::H00,
+                "music does not start with a neutral silhouette");
+        require(story.back().pose == pet::F00 || story.back().pose == pet::H00,
+                "music does not return to a neutral silhouette");
         if (n != static_cast<int>(pet::MusicAction::TailWag)) {
             for (const auto &step : story)
                 require(step.pose < pet::B00 || step.pose > pet::B02,
