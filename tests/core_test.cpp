@@ -43,7 +43,7 @@ int main() {
             pet::frame(15).typing, "typing indicator missing");
 
     // One shuffled cycle must contain each action once, in random order.
-    for (const int count : {kIdleActionCount, kMusicActionCount}) {
+    for (const int count : {pet::kIdleActionCount, pet::kMusicActionCount}) {
         pet::ShuffleBag bag(count);
         for (int cycle = 0; cycle < 25; ++cycle) {
             std::vector<bool> seen(count, false);
