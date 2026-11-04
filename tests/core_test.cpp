@@ -276,6 +276,17 @@ int main() {
     require(enteredFeature && returnedToGroove,
             "music must alternate groove and featured performance");
 
+    // Idle ambient marks run only during the gap between authored stories.
+    pet::Animator ambient;
+    ambient.advance(0, false, false);
+    require(ambient.idleResting(), "quiet idle should breathe between actions");
+    ambient.advance(9000, false, false);
+    require(!ambient.idleResting(), "idle story should suppress ambient marks");
+    ambient.advance(9040, true, false);
+    require(!ambient.idleResting(), "typing must suppress idle ambient marks");
+    ambient.advance(9080, false, true);
+    require(!ambient.idleResting(), "music must suppress idle ambient marks");
+
     // ShuffleBag is not independent random drawing; every cycle covers all.
     for (const int count : {pet::kIdleActionCount, pet::kMusicActionCount}) {
         pet::ShuffleBag bag(count);
