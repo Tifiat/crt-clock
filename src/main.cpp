@@ -35,6 +35,7 @@
 #include "crt_style.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "pet_gift_render.hpp"
 #include "pet_tail.hpp"
 #include "clock_flicker.hpp"
 #include "desktop_autostart.hpp"
@@ -209,7 +210,8 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
 }
 
 QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
-                  const pet::JoyTail &tail, int musicNotePhase, int idleAmbientPhase) {
+                  const pet::JoyTail &tail, int musicStreamPhase,
+                  int idleBreathPhase, const pet::GiftVisual &gift) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -237,14 +239,16 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
     const QRectF petArea(10, 217, 460, 82);
     const bool stockPet = cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ");
     text.save();
-    if (stockPet && idleAmbientPhase >= 0)
-        text.translate(0, idleAmbientPhase == 2 ? -1 : (idleAmbientPhase == 5 ? 1 : 0));
+    if (stockPet && idleBreathPhase >= 0)
+        text.translate(0, idleBreathPhase == 2 ? -1 : (idleBreathPhase == 5 ? 1 : 0));
     pet::paint(text, petArea, cfg.petFont,
                cfg.pet, pose, petColor, cfg.petFontSize, cfg.petStroke, tail);
     text.restore();
     if (stockPet) {
-        pet::paintIdleMarks(text, petArea, petColor, idleAmbientPhase);
-        pet::paintMusicNotes(text, petArea, petColor, musicNotePhase);
+        // Gift effects and the musical stream are independent vector layers.
+        // Nothing decorates ordinary idle, except gentle body breathing.
+        pet::paintGiftEffect(text, gift, petColor);
+        pet::paintMusicStream(text, petColor, musicStreamPhase);
     }
     text.end();
 
@@ -317,20 +321,20 @@ public:
         const bool joyful = cfg_.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ") &&
                            pet::hasJoyfulEyes(pet::frame(animator_.pose()));
         dirty = joyTail_.advance(now, joyful, cfg_.petAnimationSpeed) || dirty;
-        // Decorative notes run independently while music is playing. Typing
-        // takes priority and suppresses them without changing Matrix timing.
-        const int nextNotePhase = animator_.activity() == pet::Activity::Music
-            ? int(((now * cfg_.petAnimationSpeed / 100) / 220) % 8) : -1;
-        if (nextNotePhase != musicNotePhase_) {
-            musicNotePhase_ = nextNotePhase;
+        // Three densely staggered vector columns scroll through the old
+        // Matrix strip while MPRIS is Playing; typing always hides the stream.
+        const int nextStreamPhase = animator_.activity() == pet::Activity::Music
+            ? int(((now * qint64(cfg_.petAnimationSpeed) / 100) / 60) % 900) : -1;
+        if (nextStreamPhase != musicStreamPhase_) {
+            musicStreamPhase_ = nextStreamPhase;
             dirty = true;
         }
-        // Continuous subtle idle motion is active ONLY between idle stories.
-        // Fast typing and music must never inherit these motion marks.
-        const int nextAmbientPhase = animator_.idleResting()
-            ? int(((now * cfg_.petAnimationSpeed / 100) / 380) % 6) : -1;
-        if (nextAmbientPhase != idleAmbientPhase_) {
-            idleAmbientPhase_ = nextAmbientPhase;
+        // Keep the +/-1px breath even during long stationary idle expressions.
+        // No idle stripes: thin trails are reserved for flying/exploding gifts.
+        const int nextBreathPhase = animator_.idleBreathing()
+            ? int(((now * qint64(cfg_.petAnimationSpeed) / 100) / 380) % 6) : -1;
+        if (nextBreathPhase != idleBreathPhase_) {
+            idleBreathPhase_ = nextBreathPhase;
             dirty = true;
         }
         const quint64 count = keyboard_->pressCount();
@@ -767,7 +771,8 @@ private:
     }
     void redraw() {
         frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_,
-                            musicNotePhase_, idleAmbientPhase_);
+                            musicStreamPhase_, idleBreathPhase_,
+                            animator_.giftVisual(elapsed_.elapsed()));
         if (matrix_.active()) rebuildMatrix();
         update();
     }
@@ -811,8 +816,8 @@ private:
     double clockIntensity_ = 1.0;
     QString lastMinute_;
     bool musicPlaying_ = false;
-    int musicNotePhase_ = -1;
-    int idleAmbientPhase_ = -1;
+    int musicStreamPhase_ = -1;
+    int idleBreathPhase_ = -1;
     QDialog *settingsWindow_ = nullptr;
     bool editing_ = false;
 };
