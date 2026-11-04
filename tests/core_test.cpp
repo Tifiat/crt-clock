@@ -1,4 +1,5 @@
 #include <QPointF>
+#include <QGuiApplication>
 #include <QString>
 #include <QFile>
 #include <QTemporaryDir>
@@ -32,7 +33,12 @@ static void close(double a, double b) {
     require(std::abs(a-b) < .001, "coordinates differ");
 }
 
-int main() {
+int main(int argc, char **argv) {
+    // Sprite raster tests use QFontDatabase. Run headless in CI while
+    // preserving the platform selected by an explicit test environment.
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
     const QString original = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     require(pet::frame(pet::F00).line == original, "original face must be retained");
     require(pet::kFrontColumns == 10 && pet::kBackColumns == 11,
@@ -754,7 +760,8 @@ int main() {
     const auto &reuse = spriteCache.sprite(pet::F00, noWag);
     require(&firstSprite == &reuse && spriteCache.buildCount() == spriteBuilds,
             "same pose and tail state must reuse the cached raster");
-    spriteCache.sprite(pet::F02, noWag);
+    const auto &otherSprite = spriteCache.sprite(pet::F02, noWag);
+    require(!otherSprite.isNull(), "second sprite must rasterize");
     require(spriteCache.buildCount() == spriteBuilds + 1,
             "different eye pose should have its own reusable raster");
     spriteCache.configure(QStringLiteral("DejaVu Sans Mono"), original,
