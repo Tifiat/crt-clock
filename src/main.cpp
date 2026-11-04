@@ -399,10 +399,15 @@ public:
         else if (name == QStringLiteral("cry")) kind = pet::GiftKind::BurstCry;
         else if (name == QStringLiteral("pulse")) kind = pet::GiftKind::Pulse;
         else return; // Ignore malformed commands without changing state.
-        animator_.previewGift(kind, elapsed_.elapsed());
-        musicStreamPhase_ = -1;
-        idleBreathPhase_ = -1;
-        redraw();
+        // X11 keyboard activity remains "typing" for 950ms after Enter.
+        // An immediate preview would be cancelled by the very CLI command
+        // that requested it. Start after that window has expired.
+        QTimer::singleShot(1200, this, [this, kind] {
+            animator_.previewGift(kind, elapsed_.elapsed());
+            musicStreamPhase_ = -1;
+            idleBreathPhase_ = -1;
+            redraw();
+        });
     }
 
     void settings() {
