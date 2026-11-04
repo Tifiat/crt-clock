@@ -229,9 +229,9 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
             for (int eye = 0; eye < 2; ++eye) {
                 const bool leading = (eye == 0) == leftLeads;
                 const qreal x = eye == 0 ? 142.0 : 237.0;
-                const double phase = t * 4.3 - (leading ? 0.0 : 0.48);
+                const double phase = t * 3.1 - (leading ? 0.0 : 0.38);
                 for (int dropIndex = 0; dropIndex < 4; ++dropIndex) {
-                    const double progress = phase - dropIndex;
+                    const double progress = phase - dropIndex * .7;
                     if (progress < 0.0 || progress > 1.0) continue;
                     const qreal y = 249.0 + 38.0 * progress * progress;
                     const double appear = std::clamp(progress / .12, 0.0, 1.0);
