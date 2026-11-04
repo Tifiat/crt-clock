@@ -11,6 +11,7 @@
 #include "pet_animation.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "pet_sprite_cache.hpp"
 #include "pet_gift_render.hpp"
 #include "pet_tail.hpp"
 #include "crt_style.hpp"
@@ -736,6 +737,35 @@ int main() {
     require(noGift.pixelColor(392, 247).alpha() == 0,
             "gift renderer must do nothing when cue is None");
 
+    // Pose Unicode shaping (10 fixed cells and multiple thick strokes)
+    // is cached per appearance and tail state. The active frame only
+    // translates/mirrors a supersampled bitmap, without re-shaping text.
+    pet::SpriteCache spriteCache;
+    const pet::JoyTail noWag;
+    spriteCache.configure(QStringLiteral("DejaVu Sans Mono"), original,
+                          QColor("#B0FFBB"), 43, 25);
+    const auto &firstSprite = spriteCache.sprite(pet::F00, noWag);
+    require(firstSprite.width() == pet::SpriteCache::kCanvasWidth &&
+            firstSprite.height() == pet::SpriteCache::kSpriteHeight,
+            "cached sprite must stay at original pet resolution");
+    const auto spriteBuilds = spriteCache.buildCount();
+    require(spriteBuilds == 1 && spriteCache.cachedPoses() == 1,
+            "first sprite should be rendered only once");
+    const auto &reuse = spriteCache.sprite(pet::F00, noWag);
+    require(&firstSprite == &reuse && spriteCache.buildCount() == spriteBuilds,
+            "same pose and tail state must reuse the cached raster");
+    spriteCache.sprite(pet::F02, noWag);
+    require(spriteCache.buildCount() == spriteBuilds + 1,
+            "different eye pose should have its own reusable raster");
+    spriteCache.configure(QStringLiteral("DejaVu Sans Mono"), original,
+                          QColor("#B0FFBB"), 43, 25);
+    require(spriteCache.cachedPoses() == 2,
+            "unchanged user appearance should not invalidate sprites");
+    spriteCache.configure(QStringLiteral("DejaVu Sans Mono"), original,
+                          QColor("#B0FFBB"), 43, 65);
+    require(spriteCache.cachedPoses() == 0,
+            "changing font stroke must invalidate cached glyphs");
+
     // Matrix input has no key values and produces two independently rising
     // columns without changing the pet renderer or changing fonts.
     MatrixRain matrix;
@@ -762,6 +792,15 @@ int main() {
         if (hasRedPixels) break;
     }
     require(hasRedPixels, "Matrix must use selected user phosphor color");
+    const auto compactRain = matrix.stripImage(QColor("#FF0000"), 90);
+    require(compactRain.width() == 108 &&
+            compactRain.height() == MatrixRain::CanvasHeight,
+            "live Matrix source must only rasterize its 108px strip");
+    for (int y = 0; y < MatrixRain::CanvasHeight; y += 4)
+        for (int x = MatrixRain::StripX; x < MatrixRain::CanvasWidth; x += 4)
+            require(compactRain.pixelColor(x - MatrixRain::StripX, y) ==
+                    redRain.pixelColor(x, y),
+                    "cropped Matrix glyphs must match original full-canvas rendering");
     for (int t = 80; t <= 7000; t += 40)
         matrix.advance(t, false);
     require(!matrix.active(), "Matrix glyphs should fade and vanish");
