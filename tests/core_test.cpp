@@ -736,62 +736,94 @@ int main(int argc, char **argv) {
                 if (effect.pixelColor(x, y).alpha() > 0) ++count;
         require(count > 4, "gift effects must render at intermediate progress");
     }
-    // Tears now flow from BOTH eyes, visibly overlapping instead of
-    // rendering only one droplet per 1.35s crying cue.
-    for (pet::GiftCue leading : {pet::GiftCue::TearLeft,
-                                 pet::GiftCue::TearRight}) {
-        for (const double progress : {.28, .48, .72}) {
-            QImage crying(480, 320, QImage::Format_ARGB32_Premultiplied);
-            crying.fill(Qt::transparent);
-            {
-                QPainter painter(&crying);
-                pet::paintGiftEffect(painter,
-                    {leading, pet::GiftKind::BurstCry, progress},
-                    QColor("#88FF88"));
-            }
-            int tearsFromLeft = 0, tearsFromRight = 0;
-            for (int y = 244; y <= 291; ++y) {
-                for (int x = 129; x < 158; ++x)
-                    tearsFromLeft += crying.pixelColor(x, y).alpha() > 20;
-                for (int x = 224; x < 253; ++x)
-                    tearsFromRight += crying.pixelColor(x, y).alpha() > 20;
-            }
-            require(tearsFromLeft > 6 && tearsFromRight > 6,
-                    "crying stream must show simultaneous tears from both eyes");
-        }
-    }
-
-    // Tears must be a continuous stream, not one isolated droplet.
-    // Verify separate upper/lower drops in BOTH eyes, even near the
-    // start/end of a cue, and a seamless left/right cue transition.
-    auto cryingFrame = [](pet::GiftCue cue, double progress) {
+    // Restore the original single-drop drawing (shape/color/size/curve)
+    // while emitting one alternating-eye drop every 675ms.
+    auto cryingFrame = [](double elapsedMs) {
         QImage image(480, 320, QImage::Format_ARGB32_Premultiplied);
         image.fill(Qt::transparent);
         QPainter painter(&image);
         pet::paintGiftEffect(painter,
-            {cue, pet::GiftKind::BurstCry, progress}, QColor("#88FF88"));
+            {pet::GiftCue::TearLeft, pet::GiftKind::BurstCry, 0.0,
+             0.0, elapsedMs}, QColor("#88FF88"));
         painter.end();
         return image;
     };
-    for (auto cue : {pet::GiftCue::TearLeft, pet::GiftCue::TearRight}) {
-        for (const double progress : {0.0, .12, .42, .85, 1.0}) {
-            const QImage frame = cryingFrame(cue, progress);
-            for (const int x0 : {129, 224}) {
-                int upper = 0, lower = 0;
-                for (int x = x0; x < x0 + 29; ++x) {
-                    for (int y = 244; y <= 258; ++y)
-                        upper += frame.pixelColor(x, y).alpha() > 20;
-                    for (int y = 263; y <= 295; ++y)
-                        lower += frame.pixelColor(x, y).alpha() > 20;
-                }
-                require(upper > 4 && lower > 4,
-                        "crying must keep multiple falling tears in both eyes");
+    // At the first instant exactly one original droplet is rendered.
+    const double firstProgress = 200.0/1350.0;
+    QImage originalDrop(480, 320, QImage::Format_ARGB32_Premultiplied);
+    originalDrop.fill(Qt::transparent);
+    {
+        QPainter painter(&originalDrop);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const double alpha = firstProgress < .12 ? firstProgress/.12 :
+                             firstProgress > .85 ? (1.0-firstProgress)/.15 : 1.0;
+        pet::giftDrop(painter, 142.0, 251.0+33.0*firstProgress*firstProgress,
+                      6.0, pet::giftTint(QColor("#b5faff"), alpha));
+    }
+    require(cryingFrame(0.0) == originalDrop,
+            "first tear must preserve the original color, size and curve");
+
+    // The original slow fall lasts 1350ms, but new drops appear
+    // twice as often and keep alternating left/right.
+    for (int ms = 0; ms <= 13500; ms += 75) {
+        const QImage frame = cryingFrame(double(ms));
+        int pixels = 0;
+        for (const int x0 : {129, 224})
+            for (int x = x0; x < x0+29; ++x)
+                for (int y = 244; y <= 292; ++y)
+                    pixels += frame.pixelColor(x,y).alpha() > 10;
+        require(pixels > 4, "crying must not pause between falling drops");
+    }
+    for (int ms : {0, 675, 1350, 2025}) {
+        const QImage frame = cryingFrame(double(ms));
+        const int leadingX = (ms/675)%2 == 0 ? 142 : 237;
+        require(frame.pixelColor(leadingX, 252).alpha() > 10,
+                "tear starts from the alternating eye at 675ms intervals");
+    }
+
+    // Actual story: tears must begin when dot-eyes appear, continue across
+    // the old TearLeft/TearRight boundaries and persist through the last
+    // previously-empty sad hold. Repaint must remain active the entire time.
+    for (pet::GiftKind kind : {pet::GiftKind::BurstSad,
+                               pet::GiftKind::BurstCry}) {
+        pet::Animator cryingPreview;
+        cryingPreview.previewGift(kind, 0);
+        bool enteredSad = false, exitedSad = false;
+        qint64 lastElapsed = -1;
+        int cryingTicks = 0, initialHoldTicks = 0, finalHoldTicks = 0;
+        for (qint64 ms = 0; ms <= 43000; ms += 80) {
+            const bool dirty = cryingPreview.advance(ms, false, false);
+            const int pose = cryingPreview.pose();
+            const bool sad = pose == pet::SadComic || pose == pet::SadCry;
+            const auto visual = cryingPreview.giftVisual(ms);
+            if (sad) {
+                enteredSad = true;
+                ++cryingTicks;
+                require(dirty && visual.active() &&
+                        visual.tearElapsedMs >= lastElapsed,
+                        "continuous tears must repaint without resetting the timer");
+                const QImage image = cryingFrame(visual.tearElapsedMs);
+                int count = 0;
+                for (int x = 129; x <= 252; ++x)
+                    for (int y = 244; y <= 292; ++y)
+                        count += image.pixelColor(x,y).alpha() > 10;
+                require(count > 4, "tears must remain visible throughout dot-eyes");
+                if (visual.tearElapsedMs < 1950.0) ++initialHoldTicks;
+                if (visual.tearElapsedMs > 5500.0) ++finalHoldTicks;
+                lastElapsed = static_cast<qint64>(visual.tearElapsedMs);
+            } else if (enteredSad) {
+                exitedSad = true;
+                require(!visual.active() ||
+                        (visual.cue != pet::GiftCue::TearLeft &&
+                         visual.cue != pet::GiftCue::TearRight),
+                        "tears must end when sad eyes disappear");
+                break;
             }
         }
+        require(enteredSad && exitedSad && cryingTicks >= 70 &&
+                initialHoldTicks > 3 && finalHoldTicks > 3,
+                "crying must cover complete long sadness, including its holds");
     }
-    require(cryingFrame(pet::GiftCue::TearLeft, 1.0) ==
-                cryingFrame(pet::GiftCue::TearRight, 0.0),
-            "successive crying cues must join without a tear reset");
 
     QImage noGift(480, 320, QImage::Format_ARGB32_Premultiplied);
     noGift.fill(Qt::transparent);

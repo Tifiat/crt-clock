@@ -21,6 +21,7 @@ struct GiftVisual {
     GiftKind kind = GiftKind::StarFly;
     double progress = 0.0;
     double carryDx = 0.0; // the carried gift follows each approaching body pose
+    double tearElapsedMs = -1.0; // continuous sad-face time, -1 for standalone effects
     [[nodiscard]] bool active() const { return cue != GiftCue::Inactive; }
 };
 

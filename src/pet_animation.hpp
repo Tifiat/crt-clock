@@ -488,6 +488,14 @@ public:
             }
         }
 
+        const bool crying = activity_ == Activity::Idle && !story_.isEmpty() &&
+            isBurst(giftKind_) && (pose_ == SadComic || pose_ == SadCry);
+        if (crying) {
+            if (cryStartMs_ < 0) cryStartMs_ = nowMs;
+        } else {
+            cryStartMs_ = -1;
+        }
+
         const bool changed = pose_ != lastPose_;
         lastPose_ = pose_;
         // Continuous whole-body movement must repaint on every 40ms tick,
@@ -496,7 +504,7 @@ public:
         const bool interpolating = !story_.isEmpty() &&
             story_[frameIndex_].moveFrom != story_[frameIndex_].moveTo;
         const bool particles = activity_ == Activity::Idle && !story_.isEmpty() &&
-            story_[frameIndex_].cue != GiftCue::Inactive;
+            (story_[frameIndex_].cue != GiftCue::Inactive || crying);
         return changed || frameChanged || interpolating || particles;
     }
 
@@ -540,8 +548,16 @@ public:
     [[nodiscard]] GiftVisual giftVisual(qint64 nowMs) const {
         if (activity_ != Activity::Idle || story_.isEmpty()) return {};
         const Frame &frame = story_[frameIndex_];
-        if (frame.cue == GiftCue::Inactive) return {};
         const int ms = frameDuration(frame);
+        // All SadComic/SadCry frames form one continuous crying phase,
+        // including the initial and final holds without explicit tear cues.
+        if (cryStartMs_ >= 0 && isBurst(giftKind_) &&
+            (frame.pose == SadComic || frame.pose == SadCry)) {
+            return {GiftCue::TearLeft, giftKind_,
+                    std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0),
+                    0.0, double(std::max<qint64>(0, nowMs - cryStartMs_))};
+        }
+        if (frame.cue == GiftCue::Inactive) return {};
         const auto motion = motionVisual(nowMs);
         return {frame.cue, giftKind_,
                 std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0),
@@ -568,6 +584,7 @@ private:
         frameIndex_ = 0;
         if (story_.isEmpty()) { pose_ = F00; return; }
         pose_ = story_[0].pose;
+        cryStartMs_ = -1;
         frameStartMs_ = nowMs;
         nextFrame_ = nowMs + frameDuration(story_[0]);
     }
@@ -589,6 +606,7 @@ private:
     GiftKind giftKind_ = GiftKind::StarFly;
     qint64 frameStartMs_ = 0;
     qint64 nextFrame_ = 0;
+    qint64 cryStartMs_ = -1;
     qint64 idleDue_ = 8500;
 };
 } // namespace pet

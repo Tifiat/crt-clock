@@ -227,9 +227,9 @@ In v0.6.4 the original eight-handle calibration geometry is retained:
   perspective geometry changes. Dynamic ripple remains dynamic.
 - Rendering stays at the same 25 FPS. Animated gifts, typing,
   lighting/glow, font, and persistent calibration remain available.
-- Crying scenes now emit six staggered tears per eye per cue, keeping
-  two or three drops visible at once from **both eyes**. Their flow stays
-  continuous between cues throughout the existing long sadness holds.
+- Crying uses the original teardrop artwork, color and 1.35s fall.
+  Drops spawn every 675ms, alternating eyes for the entire sad-face hold,
+  including its opening and closing pauses, with no per-cue resets.
 
 The optional profiler now additionally reports `warpRebuilds`,
 `avgWarpMs` and `cachedWarpMaps`. A static calibration should keep
