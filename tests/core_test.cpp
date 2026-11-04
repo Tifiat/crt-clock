@@ -48,11 +48,8 @@ int main() {
                 "unexpected pose column count");
         require(p.headDx >= -3 && p.headDx <= 3, "head moves too far");
         require(p.headDy >= -5 && p.headDy <= 5, "head moves too far");
-        if (id >= pet::ReturnPeek && id <= pet::ReturnApproach)
-            require(p.bodyDx <= -55 && p.bodyDx >= -200,
-                    "front-facing side entrance must come from left");
-        else
-            require(p.bodyDx >= -9 && p.bodyDx <= 9, "body moves too far");
+        require(p.bodyDx >= -9 && p.bodyDx <= 9,
+                "pose body must use fixed grid, movement belongs to Animator");
         require(p.bodyDy >= -6 && p.bodyDy <= 6, "body moves too far");
         if (p.back) {
             const bool historicMusicBack = id >= pet::B00 && id <= pet::B02;
@@ -124,13 +121,18 @@ int main() {
             "gift-specific pose IDs must append after existing set");
     require(pet::frame(pet::AwayGone).hidden,
             "pet must fully disappear between departure and side return");
-    require(pet::frame(pet::ReturnPeek).bodyDx <
-            pet::frame(pet::ReturnSide).bodyDx &&
-            pet::frame(pet::ReturnSide).bodyDx <
-            pet::frame(pet::ReturnApproach).bodyDx &&
-            pet::frame(pet::ReturnApproach).bodyDx <
-            pet::frame(pet::ReturnCenter).bodyDx,
-            "return must move left-to-right, never backwards");
+    const auto entry = pet::fetchStory(pet::GiftKind::StarFly);
+    int lastTo = -420, returnSteps = 0;
+    for (const auto &frame : entry) {
+        if (frame.cue != pet::GiftCue::Carry) continue;
+        require(frame.moveFrom == lastTo && frame.moveTo > frame.moveFrom,
+                "return motion must be continuous with no teleporting");
+        lastTo = frame.moveTo;
+        ++returnSteps;
+    }
+    require(returnSteps == 4 && lastTo == 0 &&
+            pet::giftFlight(0.0, false).x() > 0,
+            "entire pet must emerge from outside left edge with a gift");
     require(pet::frame(pet::ReturnPeek).line ==
             QStringLiteral("(づ｡◔‿‿◔｡)っ"),
             "return must face toward the right instead of walking backwards");
@@ -185,7 +187,7 @@ int main() {
             celebration[1].absoluteDuration,
             "celebration happiness must last at high speed settings");
 
-    require(pet::kIdleActionCount == 14, "new idle patrol/fetch actions missing");
+    require(pet::kIdleActionCount == 15, "idle one-shot winks must be included");
     const auto patrol = pet::idleStory(pet::IdleAction::Patrol);
     const auto fetch = pet::idleStory(pet::IdleAction::Fetch);
     require(pet::duration(patrol) >= 4500 && pet::duration(fetch) >= 7000,
@@ -288,8 +290,9 @@ int main() {
         require(story[vanishAt].durationMs >= 3000,
                 "pet must stay gone visibly before returning");
         require(carried == 4 && story[returnAt].cue == pet::GiftCue::Carry &&
-                story[returnAt].carryDx == -200,
-                "gift should be visible in the pet's hand on first reentry");
+                story[returnAt].moveFrom <= -410 &&
+                story[returnAt].moveTo > story[returnAt].moveFrom,
+                "return starts entirely offscreen, gift and pet enter smoothly");
         if (variant == pet::GiftKind::StarFly ||
             variant == pet::GiftKind::ArcFly)
             require(handoff == 1 && flew == 1,
@@ -323,13 +326,13 @@ int main() {
             sleepy[1].absoluteDuration && sleepy[1].durationMs >= 3200,
             "sleeping must be visibly long even at high animation speed");
     const auto peek = pet::idleStory(pet::IdleAction::Peek);
-    require(peek[1].absoluteDuration && peek[3].absoluteDuration &&
-            peek[1].durationMs >= 1400,
-            "side glance should be held instead of flickering");
+    require(peek.size() == 3 && peek[1].pose == pet::F02 &&
+            peek[1].absoluteDuration && peek[1].durationMs >= 1800,
+            "side glance must happen ONCE and return to idle");
     const auto shy = pet::idleStory(pet::IdleAction::Shy);
-    require(shy[1].absoluteDuration && shy[3].absoluteDuration &&
-            shy[1].durationMs >= 1600,
-            "shy eyes should linger before returning to neutral");
+    require(shy.size() == 5 && shy[2].pose == pet::F08 &&
+            shy[2].absoluteDuration && shy[2].durationMs >= 2200,
+            "shy eyes should be entered and exited exactly once");
     require(pet::frame(pet::SadCry).line == QStringLiteral("(づ｡•﹏﹏•｡)づ"),
             "crying uses dots rather than semicolons obscuring drawn tears");
 
@@ -364,18 +367,21 @@ int main() {
         require(step.pose != pet::F17 && step.pose != pet::F16,
                 "rapid alternate mouth shapes should not appear in baseline groove");
     }
-    require(pet::kMusicActionCount == 11, "featured music set incomplete");
-    for (const auto action : {pet::MusicAction::LookToBeat,
-                              pet::MusicAction::WinkGroove}) {
-        const auto story = pet::musicStory(action);
-        for (int i = 1; i < story.size(); ++i) {
-            if (story[i].pose == pet::F09 || story[i].pose == pet::F10)
-                require(story[i-1].pose == story[i].pose ||
-                        (i+1 < story.size() &&
-                         story[i+1].pose == story[i].pose),
-                        "musical winks should be held at least two beats");
-        }
+    require(pet::kMusicActionCount == 9,
+            "LookToBeat and WinkGroove must be removed from music");
+    const auto winks = pet::idleStory(pet::IdleAction::WinkLeftRight);
+    int leftWinks = 0, rightWinks = 0;
+    for (const auto &f : winks) {
+        leftWinks += f.pose == pet::F09;
+        rightWinks += f.pose == pet::F10;
     }
+    require(leftWinks == 1 && rightWinks == 1,
+            "idle wink should blink each eye only once");
+    const auto indignation = pet::idleStory(pet::IdleAction::Indignant);
+    int angryFrames = 0;
+    for (const auto &f : indignation) angryFrames += f.pose == pet::F12;
+    require(angryFrames == 1,
+            "indignation should not cycle back to angry eyes repeatedly");
     for (int n = 0; n < pet::kMusicActionCount; ++n) {
         const auto story = pet::musicStory(static_cast<pet::MusicAction>(n));
         require(pet::duration(story) >= 3000, "music action too short");
