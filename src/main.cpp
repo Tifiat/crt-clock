@@ -13,6 +13,8 @@
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QTabWidget>
+#include <QGroupBox>
 #include <QLabel>
 #include <QElapsedTimer>
 #include <QComboBox>
@@ -26,6 +28,7 @@
 #include <QPainterPath>
 #include <QTimer>
 #include <memory>
+#include <functional>
 #include "pet_animation.hpp"
 #include "perspective.hpp"
 #include "keyboard_activity.hpp"
@@ -394,22 +397,57 @@ public:
     void start() { editing_ = false; applyMode(); }
 
     void previewGift(const QString &name) {
-        pet::GiftKind kind;
-        if (name == QStringLiteral("star")) kind = pet::GiftKind::StarFly;
-        else if (name == QStringLiteral("arc")) kind = pet::GiftKind::ArcFly;
-        else if (name == QStringLiteral("pop")) kind = pet::GiftKind::BurstSad;
-        else if (name == QStringLiteral("cry")) kind = pet::GiftKind::BurstCry;
-        else if (name == QStringLiteral("pulse")) kind = pet::GiftKind::Pulse;
-        else return; // Ignore malformed commands without changing state.
-        // X11 keyboard activity remains "typing" for 950ms after Enter.
-        // An immediate preview would be cancelled by the very CLI command
-        // that requested it. Start after that window has expired.
-        QTimer::singleShot(1200, this, [this, kind] {
-            animator_.previewGift(kind, elapsed_.elapsed());
+        int kind = -1;
+        if (name == QStringLiteral("star")) kind = int(pet::GiftKind::StarFly);
+        else if (name == QStringLiteral("arc")) kind = int(pet::GiftKind::ArcFly);
+        else if (name == QStringLiteral("pop")) kind = int(pet::GiftKind::BurstSad);
+        else if (name == QStringLiteral("cry")) kind = int(pet::GiftKind::BurstCry);
+        else if (name == QStringLiteral("pulse")) kind = int(pet::GiftKind::Pulse);
+        if (kind >= 0) requestAnimationPreview(QStringLiteral("gift"), kind);
+    }
+
+    // A single preview path is shared by the UI and one-instance IPC.
+    // 1.1s debounce avoids the terminal's 950ms keyboard activity window:
+    // pressing Enter to request a preview must not cancel that very preview.
+    void requestAnimationPreview(const QString &category, int index) {
+        const quint64 serial = ++previewSerial_;
+        QTimer::singleShot(1100, this, [this, category, index, serial] {
+            if (serial != previewSerial_) return;
+            const qint64 now = elapsed_.elapsed();
+            if (category == QStringLiteral("gift") &&
+                index >= 0 && index < pet::kGiftKindCount) {
+                animator_.previewGift(static_cast<pet::GiftKind>(index), now);
+            } else if (category == QStringLiteral("idle") &&
+                       index >= -1 && index < pet::kIdleActionCount) {
+                if (index == -1) animator_.previewIdleBreathing(now);
+                else animator_.previewIdle(static_cast<pet::IdleAction>(index), now);
+            } else if (category == QStringLiteral("music") &&
+                       index >= -1 && index < pet::kMusicActionCount) {
+                if (index == -1) animator_.previewGroove(now);
+                else animator_.previewMusic(static_cast<pet::MusicAction>(index), now);
+            } else if (category == QStringLiteral("typing")) {
+                animator_.previewTyping(now);
+                // Synthetic decorative matrix presses. Never store the keys.
+                for (int n = 0; n < 11; ++n) {
+                    QTimer::singleShot(n * 170, this, [this, serial] {
+                        if (serial != previewSerial_ ||
+                            !animator_.previewing(pet::Activity::Typing)) return;
+                        matrix_.addPress(elapsed_.elapsed());
+                        rebuildMatrix();
+                        update();
+                    });
+                }
+            } else return;
             musicStreamPhase_ = -1;
             idleBreathPhase_ = -1;
             redraw();
         });
+    }
+
+    void stopAnimationPreview() {
+        ++previewSerial_;
+        animator_.stopPreview(elapsed_.elapsed());
+        redraw();
     }
 
     void settings() {
@@ -480,30 +518,6 @@ public:
                       flickerStart_ = -1;
                       clockIntensity_ = 1.0;
                       scheduleNextFlicker(elapsed_.elapsed());
-                  });
-
-        auto *typing = new QCheckBox("React to typing (priority over music)", dialog);
-        typing->setChecked(cfg_.typingResponse);
-        form->addRow(typing);
-        connect(typing, &QCheckBox::toggled, dialog, [this](bool on) {
-            cfg_.typingResponse = on;
-        });
-
-        auto *music = new QCheckBox("Dance while a MPRIS player is playing", dialog);
-        music->setChecked(cfg_.musicResponse);
-        form->addRow(music);
-        connect(music, &QCheckBox::toggled, dialog, [this](bool on) {
-            cfg_.musicResponse = on;
-            if (!on) musicPlaying_ = false;
-            redraw();
-        });
-
-        addSlider("Pet autonomous animation speed (%) — idle and music only",
-                  cfg_.petAnimationSpeed,
-                  pet::kMinAutonomousSpeed, pet::kMaxAutonomousSpeed,
-                  [this](Settings &s, int percent) {
-                      s.petAnimationSpeed = percent;
-                      animator_.setAutonomousSpeed(percent, elapsed_.elapsed());
                   });
 
         auto *border = new QCheckBox("Show border", dialog);
@@ -613,6 +627,185 @@ public:
         dialog->show();
         QTimer::singleShot(0, this, [this] { reassertWorkspaceStickiness(); });
     }
+    void animationSettings() {
+        if (animationSettingsWindow_) {
+            animationSettingsWindow_->raise();
+            animationSettingsWindow_->activateWindow();
+            return;
+        }
+        const int previousSpeed = cfg_.petAnimationSpeed;
+        const bool previousMusic = cfg_.musicResponse;
+        const bool previousTyping = cfg_.typingResponse;
+
+        auto *dialog = new QDialog(nullptr);
+        animationSettingsWindow_ = dialog;
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->setAttribute(Qt::WA_QuitOnClose, false);
+        dialog->setWindowTitle(QStringLiteral("CRT Clock / Настройки анимации"));
+        auto *layout = new QVBoxLayout(dialog);
+        auto *scroll = new QScrollArea(dialog);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        layout->addWidget(scroll, 1);
+        auto *fields = new QWidget(scroll);
+        scroll->setWidget(fields);
+        auto *body = new QVBoxLayout(fields);
+
+        auto *controls = new QGroupBox(QStringLiteral("Поведение персонажа"), fields);
+        auto *form = new QFormLayout(controls);
+        form->setRowWrapPolicy(QFormLayout::WrapAllRows);
+        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        auto *speed = new QSlider(Qt::Horizontal, controls);
+        speed->setRange(pet::kMinAutonomousSpeed, pet::kMaxAutonomousSpeed);
+        speed->setValue(cfg_.petAnimationSpeed);
+        auto *speedValue = new QLabel(QString::number(cfg_.petAnimationSpeed) + "%", controls);
+        auto *speedRow = new QWidget(controls);
+        auto *speedLayout = new QHBoxLayout(speedRow);
+        speedLayout->setContentsMargins(0, 0, 0, 0);
+        speedLayout->addWidget(speed, 1);
+        speedLayout->addWidget(speedValue);
+        form->addRow(QStringLiteral("Скорость Idle / Music / Gifts"), speedRow);
+        connect(speed, &QSlider::valueChanged, dialog, [this, speedValue](int percent) {
+            cfg_.petAnimationSpeed = percent;
+            animator_.setAutonomousSpeed(percent, elapsed_.elapsed());
+            speedValue->setText(QString::number(percent) + "%");
+            redraw();
+        });
+
+        auto *music = new QCheckBox(QStringLiteral("Танцевать, когда играет музыка (MPRIS)"),
+                                    controls);
+        music->setChecked(cfg_.musicResponse);
+        form->addRow(music);
+        connect(music, &QCheckBox::toggled, dialog, [this](bool value) {
+            cfg_.musicResponse = value;
+            if (!value) musicPlaying_ = false;
+            redraw();
+        });
+        auto *typing = new QCheckBox(QStringLiteral("Реагировать на печать (высший приоритет)"),
+                                     controls);
+        typing->setChecked(cfg_.typingResponse);
+        form->addRow(typing);
+        connect(typing, &QCheckBox::toggled, dialog, [this](bool value) {
+            cfg_.typingResponse = value;
+            redraw();
+        });
+        body->addWidget(controls);
+
+        auto *description = new QLabel(
+            QStringLiteral("Предпросмотр запускается в самом виджете один раз. "
+                           "Подождите примерно секунду после нажатия кнопки. "
+                           "Случайные очереди при проверке не расходуются."),
+            fields);
+        description->setWordWrap(true);
+        body->addWidget(description);
+
+        auto *tabs = new QTabWidget(fields);
+        body->addWidget(tabs, 1);
+        auto addTab = [this, tabs](const QString &title, const QString &hint,
+                                   const QStringList &items,
+                                   std::function<void(int)> preview) {
+            auto *page = new QWidget(tabs);
+            auto *column = new QVBoxLayout(page);
+            auto *label = new QLabel(hint, page);
+            label->setWordWrap(true);
+            column->addWidget(label);
+            auto *selector = new QComboBox(page);
+            selector->addItems(items);
+            column->addWidget(selector);
+            auto *play = new QPushButton(QStringLiteral("▶ Воспроизвести"), page);
+            column->addWidget(play);
+            column->addStretch(1);
+            connect(play, &QPushButton::clicked, page,
+                    [selector, preview] { preview(selector->currentIndex()); });
+            tabs->addTab(page, title);
+        };
+
+        addTab(QStringLiteral("Idle"),
+               QStringLiteral("Дыхание в ожидании и все 14 самостоятельных Idle-сцен."),
+               {QStringLiteral("Дыхание / ожидание"),
+                QStringLiteral("Blink / моргание"),
+                QStringLiteral("Peek / взгляд в сторону"),
+                QStringLiteral("Smile / улыбка"),
+                QStringLiteral("Surprise / удивление"),
+                QStringLiteral("Smug / самодовольство"),
+                QStringLiteral("Shy / смущение"),
+                QStringLiteral("Sleepy / сонный"),
+                QStringLiteral("Confused / недоумение"),
+                QStringLiteral("Greeting / приветствие"),
+                QStringLiteral("Fidget / движения лап"),
+                QStringLiteral("Celebrate / радуется"),
+                QStringLiteral("Indignant / негодование"),
+                QStringLiteral("Patrol / ходит туда-сюда"),
+                QStringLiteral("Fetch / уходит и приносит звезду")},
+               [this](int i) {
+                   requestAnimationPreview(QStringLiteral("idle"), i - 1);
+               });
+        addTab(QStringLiteral("Music"),
+               QStringLiteral("Базовое покачивание и все 11 отдельных музыкальных танцев."),
+               {QStringLiteral("Groove / базовое покачивание"),
+                QStringLiteral("HeadNod / кивает"),
+                QStringLiteral("TailWag / спиной и хвостом"),
+                QStringLiteral("HandGroove / лапки"),
+                QStringLiteral("Bounce / прыжки"),
+                QStringLiteral("Sway / раскачивание"),
+                QStringLiteral("HappyDance / радуется"),
+                QStringLiteral("LookToBeat / взгляд в ритм"),
+                QStringLiteral("BigDance / большой танец"),
+                QStringLiteral("EyesClosedNotes / закрытые глаза"),
+                QStringLiteral("SideStep / шаги в стороны"),
+                QStringLiteral("WinkGroove / подмигивание")},
+               [this](int i) {
+                   requestAnimationPreview(QStringLiteral("music"), i - 1);
+               });
+        addTab(QStringLiteral("Typing"),
+               QStringLiteral("Печать: лапки + 11 тестовых декоративных символов Matrix. "
+                              "Текст нажатых клавиш не считывается."),
+               {QStringLiteral("Typing + Matrix / печать")},
+               [this](int) {
+                   requestAnimationPreview(QStringLiteral("typing"), 0);
+               });
+        addTab(QStringLiteral("Gifts"),
+               QStringLiteral("Все пять финалов редкой сцены Fetch с уходом и возвращением."),
+               {QStringLiteral("StarFly / звезда и шлейф"),
+                QStringLiteral("ArcFly / полёт по дуге"),
+                QStringLiteral("BurstSad / взрыв и комичная грусть"),
+                QStringLiteral("BurstCry / взрыв и слёзы"),
+                QStringLiteral("Pulse / пульсирующий подарок")},
+               [this](int i) {
+                   requestAnimationPreview(QStringLiteral("gift"), i);
+               });
+        auto *stop = new QPushButton(QStringLiteral("■ Остановить предпросмотр"), fields);
+        body->addWidget(stop);
+        connect(stop, &QPushButton::clicked, dialog,
+                [this] { stopAnimationPreview(); });
+
+        auto *buttons = new QDialogButtonBox(
+            QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
+        layout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog] {
+            cfg_.save();
+            dialog->accept();
+        });
+        connect(buttons, &QDialogButtonBox::rejected, dialog,
+                [this, dialog, previousSpeed, previousMusic, previousTyping] {
+            cfg_.petAnimationSpeed = previousSpeed;
+            cfg_.musicResponse = previousMusic;
+            cfg_.typingResponse = previousTyping;
+            animator_.setAutonomousSpeed(previousSpeed, elapsed_.elapsed());
+            stopAnimationPreview();
+            dialog->reject();
+        });
+        connect(dialog, &QObject::destroyed, this, [this] {
+            animationSettingsWindow_ = nullptr;
+            reassertWorkspaceStickiness();
+        });
+        const QRect available = QGuiApplication::primaryScreen()->availableGeometry();
+        dialog->resize(std::min(570, available.width() - 48),
+                       std::min(590, available.height() - 64));
+        dialog->show();
+        reassertWorkspaceStickiness();
+    }
+
     void edit() {
         if (editing_) return;
         before_ = cfg_.quad;
@@ -716,13 +909,15 @@ protected:
     void contextMenuEvent(QContextMenuEvent *e) override {
         if (editing_) return;
         QMenu menu(this);
-        auto *settingsAction = menu.addAction(QStringLiteral("Настройки CRT"));
         auto *calibrateAction = menu.addAction(QStringLiteral("Калибровка перспективы"));
+        auto *settingsAction = menu.addAction(QStringLiteral("Настройки CRT"));
+        auto *animationAction = menu.addAction(QStringLiteral("Настройки анимации"));
         menu.addSeparator();
         auto *quitAction = menu.addAction(QStringLiteral("Закрыть виджет"));
         QAction *selected = menu.exec(e->globalPos());
         if (selected == settingsAction) settings();
         else if (selected == calibrateAction) edit();
+        else if (selected == animationAction) animationSettings();
         else if (selected == quitAction) QApplication::quit();
         e->accept();
     }
@@ -840,6 +1035,8 @@ private:
     int musicStreamPhase_ = -1;
     int idleBreathPhase_ = -1;
     QDialog *settingsWindow_ = nullptr;
+    QDialog *animationSettingsWindow_ = nullptr;
+    quint64 previewSerial_ = 0;
     bool editing_ = false;
 };
 }
@@ -852,6 +1049,7 @@ int main(int argc, char **argv) {
     const QStringList args = app.arguments();
     QString command = args.contains("--calibrate") ? "calibrate"
                     : args.contains("--settings") ? "settings"
+                    : args.contains("--animations") ? "animations"
                     : args.contains("--quit") ? "quit" : "start";
     for (const QString &arg : args) {
         if (arg.startsWith(QStringLiteral("--preview-gift=")))
@@ -879,6 +1077,7 @@ int main(int argc, char **argv) {
                 QString cmd = QString::fromUtf8(client->readAll()).trimmed();
                 if (cmd == "calibrate") clock.edit();
                 else if (cmd == "settings") clock.settings();
+                else if (cmd == "animations") clock.animationSettings();
                 else if (cmd == "quit") QApplication::quit();
                 else if (cmd.startsWith(QStringLiteral("preview-gift=")))
                     clock.previewGift(cmd.mid(QStringLiteral("preview-gift=").size()));
@@ -893,6 +1092,7 @@ int main(int argc, char **argv) {
     else {
         clock.start();
         if (command == "settings") clock.settings();
+        else if (command == "animations") clock.animationSettings();
         else if (command.startsWith(QStringLiteral("preview-gift=")))
             clock.previewGift(command.mid(QStringLiteral("preview-gift=").size()));
     }
