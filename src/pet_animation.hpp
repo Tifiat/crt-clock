@@ -56,6 +56,14 @@ inline Frame walk(int pose, int ms, int from, int to, bool mirror = false) {
     return frame;
 }
 
+inline Frame restAt(int pose, int ms, int offset, bool mirror = false) {
+    Frame f = hold(pose, ms);
+    f.moveFrom = offset;
+    f.moveTo = offset;
+    f.mirror = mirror;
+    return f;
+}
+
 inline Frame gesture(int pose, int ms, int from, int to, int streak = 0) {
     Frame frame = walk(pose, ms, from, to);
     frame.streak = streak;
@@ -207,13 +215,13 @@ inline Story idleStory(IdleAction action) {
                     walk(IdleStepRight, 430, 0, 50),
                     walk(IdleStepLeft, 430, 50, 105),
                     walk(IdleStepRight, 430, 105, 160),
-                    hold(IdleStepRight, 380),
+                    restAt(IdleStepRight, 380, 160),
                     walk(IdleStepLeft, 430, 160, 105, true),
                     walk(IdleStepRight, 430, 105, 50, true),
                     walk(IdleStepLeft, 430, 50, -5, true),
                     walk(IdleStepRight, 430, -5, -60, true),
                     walk(IdleStepLeft, 430, -60, -125, true),
-                    hold(IdleStepLeft, 380),
+                    restAt(IdleStepLeft, 380, -125, true),
                     walk(IdleStepRight, 450, -125, -75),
                     walk(IdleStepLeft, 450, -75, -25),
                     walk(IdleStepRight, 450, -25, 0),
