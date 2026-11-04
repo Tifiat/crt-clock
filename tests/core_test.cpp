@@ -736,6 +736,31 @@ int main(int argc, char **argv) {
                 if (effect.pixelColor(x, y).alpha() > 0) ++count;
         require(count > 4, "gift effects must render at intermediate progress");
     }
+    // Tears now flow from BOTH eyes, visibly overlapping instead of
+    // rendering only one droplet per 1.35s crying cue.
+    for (pet::GiftCue leading : {pet::GiftCue::TearLeft,
+                                 pet::GiftCue::TearRight}) {
+        for (const double progress : {.28, .48, .72}) {
+            QImage crying(480, 320, QImage::Format_ARGB32_Premultiplied);
+            crying.fill(Qt::transparent);
+            {
+                QPainter painter(&crying);
+                pet::paintGiftEffect(painter,
+                    {leading, pet::GiftKind::BurstCry, progress},
+                    QColor("#88FF88"));
+            }
+            int tearsFromLeft = 0, tearsFromRight = 0;
+            for (int y = 244; y <= 291; ++y) {
+                for (int x = 129; x < 158; ++x)
+                    tearsFromLeft += crying.pixelColor(x, y).alpha() > 20;
+                for (int x = 224; x < 253; ++x)
+                    tearsFromRight += crying.pixelColor(x, y).alpha() > 20;
+            }
+            require(tearsFromLeft > 6 && tearsFromRight > 6,
+                    "crying stream must show simultaneous tears from both eyes");
+        }
+    }
+
     QImage noGift(480, 320, QImage::Format_ARGB32_Premultiplied);
     noGift.fill(Qt::transparent);
     {
