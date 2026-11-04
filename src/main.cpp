@@ -209,7 +209,7 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
 }
 
 QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
-                  const pet::JoyTail &tail, int musicNotePhase) {
+                  const pet::JoyTail &tail, int musicNotePhase, int idleAmbientPhase) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -235,10 +235,17 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
     const QRectF petArea(10, 217, 460, 82);
+    const bool stockPet = cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ");
+    text.save();
+    if (stockPet && idleAmbientPhase >= 0)
+        text.translate(0, idleAmbientPhase == 2 ? -1 : (idleAmbientPhase == 5 ? 1 : 0));
     pet::paint(text, petArea, cfg.petFont,
                cfg.pet, pose, petColor, cfg.petFontSize, cfg.petStroke, tail);
-    if (cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ"))
+    text.restore();
+    if (stockPet) {
+        pet::paintIdleMarks(text, petArea, petColor, idleAmbientPhase);
         pet::paintMusicNotes(text, petArea, petColor, musicNotePhase);
+    }
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -272,6 +279,9 @@ class ClockWindow final : public QWidget {
 public:
     ClockWindow() : screen_(QGuiApplication::primaryScreen()->geometry()), cfg_(screen_) {
         cfg_.load();
+        // Flags are set ONCE: calibration must never hide/reparent/recreate
+        // the native X11 window when entering or leaving edit mode.
+        setWindowFlags(desktop::widgetWindowFlags());
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating);
         setMouseTracking(true);
@@ -313,6 +323,14 @@ public:
             ? int(((now * cfg_.petAnimationSpeed / 100) / 220) % 8) : -1;
         if (nextNotePhase != musicNotePhase_) {
             musicNotePhase_ = nextNotePhase;
+            dirty = true;
+        }
+        // Continuous subtle idle motion is active ONLY between idle stories.
+        // Fast typing and music must never inherit these motion marks.
+        const int nextAmbientPhase = animator_.idleResting()
+            ? int(((now * cfg_.petAnimationSpeed / 100) / 380) % 6) : -1;
+        if (nextAmbientPhase != idleAmbientPhase_) {
+            idleAmbientPhase_ = nextAmbientPhase;
             dirty = true;
         }
         const quint64 count = keyboard_->pressCount();
@@ -709,12 +727,11 @@ private:
         selected_ = -1;
         if (save) redraw();
         applyMode();
-        // Switching top/bottom hints recreates the native X11 window.
-        // Reassert the workspace assignment after WM remapping finishes.
-        // Reassert only on this transition, including late WM processing.
-        for (const int delayMs : {0, 250, 900, 2000, 4500}) {
+        // No native window recreation: only EWMH above/below and geometry
+        // change, preserving its original all-desktops assignment.
+        for (const int delayMs : {0, 250, 900}) {
             QTimer::singleShot(delayMs, this, [this] {
-                if (!editing_) reassertWorkspaceStickiness();
+                if (!editing_) requestWindowMode();
             });
         }
     }
@@ -750,33 +767,25 @@ private:
     }
     void redraw() {
         frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_,
-                            musicNotePhase_);
+                            musicNotePhase_, idleAmbientPhase_);
         if (matrix_.active()) rebuildMatrix();
         update();
     }
     void applyMode() {
-        hide();
-        setWindowFlags(desktop::widgetWindowFlags(editing_));
-        setAttribute(Qt::WA_TranslucentBackground);
-        setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
-        setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
-        setGeometry(editing_ ? screen_ : bounds(cfg_));
-        // Publish the desktop hint before map, then request from XFWM4 again
-        // after it manages the new XID. hide()/setWindowFlags() remaps X11.
-        desktop::keepOnEveryWorkspace(winId());
-        show();
-        QTimer::singleShot(0, this, [this] {
-            desktop::keepOnEveryWorkspace(winId());
-        });
-        QTimer::singleShot(350, this, [this] {
-            desktop::keepOnEveryWorkspace(winId());
-        });
-        for (const int delayMs : {200, 700, 1500, 3000, 5000}) {
+        // No Qt flag changes or remapping: one XID survives Enter and Esc.
+        desktop::applyWindowMode(*this, editing_,
+                                 editing_ ? screen_ : bounds(cfg_));
+        for (int delayMs : {0, 250, 900}) {
             QTimer::singleShot(delayMs, this, [this] {
-                if (isVisible()) desktop::keepOnEveryWorkspace(winId());
+                if (isVisible()) requestWindowMode();
             });
         }
-        if (editing_) { raise(); activateWindow(); setFocus(); }
+    }
+
+    void requestWindowMode() {
+        if (!isVisible()) return;
+        desktop::keepOnEveryWorkspace(winId());
+        desktop::requestStacking(winId(), editing_);
     }
 
     QRect screen_;
@@ -803,6 +812,7 @@ private:
     QString lastMinute_;
     bool musicPlaying_ = false;
     int musicNotePhase_ = -1;
+    int idleAmbientPhase_ = -1;
     QDialog *settingsWindow_ = nullptr;
     bool editing_ = false;
 };

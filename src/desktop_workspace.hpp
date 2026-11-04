@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <utility>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 
@@ -8,14 +9,39 @@
 // XFWM4 can read the property at initial map; sending ClientMessages after
 // mapping additionally requests sticky state for an already-managed window.
 namespace desktop {
-// Use the SAME normal top-level X11 window type in calibration and display.
-// Qt::Tool can carry utility/transient WM semantics that tie a remapped
-// window to the active desktop after setWindowFlags() recreates its XID.
-inline Qt::WindowFlags widgetWindowFlags(bool editing) {
-    Qt::WindowFlags flags = Qt::Window | Qt::FramelessWindowHint;
-    if (editing) flags |= Qt::WindowStaysOnTopHint;
-    else flags |= Qt::WindowDoesNotAcceptFocus | Qt::WindowStaysOnBottomHint;
-    return flags;
+// Do not change Qt window flags after show(): Qt hides/reparents the widget
+// and can recreate its X11 window ID, losing XFWM4 workspace state.
+inline Qt::WindowFlags widgetWindowFlags() {
+    return Qt::Window | Qt::FramelessWindowHint;
+}
+
+// Update stacking through the WM without changing Qt flags or X11 window ID.
+// Calibration needs focus and ABOVE; the desktop widget needs BELOW.
+inline void requestStacking(WId nativeWindow, bool editing) {
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) return;
+    const Window window = static_cast<Window>(nativeWindow);
+    const Window root = DefaultRootWindow(dpy);
+    const Atom state = XInternAtom(dpy, "_NET_WM_STATE", False);
+    const Atom above = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
+    const Atom below = XInternAtom(dpy, "_NET_WM_STATE_BELOW", False);
+
+    for (const auto &[atom, add] : {
+             std::pair<Atom, bool>{above, editing},
+             std::pair<Atom, bool>{below, !editing}}) {
+        XEvent request{};
+        request.xclient.type = ClientMessage;
+        request.xclient.window = window;
+        request.xclient.message_type = state;
+        request.xclient.format = 32;
+        request.xclient.data.l[0] = add ? 1 : 0; // ADD / REMOVE
+        request.xclient.data.l[1] = static_cast<long>(atom);
+        request.xclient.data.l[3] = 1; // application
+        XSendEvent(dpy, root, False,
+                   SubstructureRedirectMask | SubstructureNotifyMask, &request);
+    }
+    XFlush(dpy);
+    XCloseDisplay(dpy);
 }
 
 inline void keepOnEveryWorkspace(WId nativeWindow) {
@@ -88,7 +114,10 @@ inline void keepOnEveryWorkspace(WId nativeWindow) {
 // across distinct XFCE workspaces. Checking (desktop || sticky) masked a real
 // regression when XFWM4 kept STICKY but moved the widget to one desktop.
 constexpr bool isAllDesktopsValue(unsigned long desktop) {
-    return desktop == 0xFFFFFFFFUL;
+    // XGetWindowProperty supplies CARDINAL/32 values in unsigned long slots.
+    // XFWM4/Xlib can sign-extend the special -1 sentinel on 64-bit hosts
+    // (0xffffffffffffffff instead of 0x00000000ffffffff).
+    return (desktop & 0xFFFFFFFFUL) == 0xFFFFFFFFUL;
 }
 inline bool isOnEveryWorkspace(WId nativeWindow) {
     Display *dpy = XOpenDisplay(nullptr);
@@ -112,5 +141,27 @@ inline bool isOnEveryWorkspace(WId nativeWindow) {
 
     XCloseDisplay(dpy);
     return assignedEverywhere;
+}
+
+// Keep calibration and display on ONE mapped native window. Qt's dynamic
+// setWindowFlags() would hide/reparent and can change its winId().
+inline void applyWindowMode(QWidget &window, bool editing, const QRect &rect) {
+    const bool firstMap = !window.isVisible();
+    window.setAttribute(Qt::WA_ShowWithoutActivating, !editing);
+    window.setFocusPolicy(editing ? Qt::StrongFocus : Qt::NoFocus);
+    window.setGeometry(rect);
+    if (firstMap) {
+        keepOnEveryWorkspace(window.winId());
+        window.show();
+    }
+    keepOnEveryWorkspace(window.winId());
+    requestStacking(window.winId(), editing);
+    if (editing) {
+        window.raise();
+        window.activateWindow();
+        window.setFocus(Qt::OtherFocusReason);
+    } else {
+        window.lower();
+    }
 }
 } // namespace desktop

@@ -14,13 +14,13 @@ namespace pet {
 enum class Activity { Idle, Music, Typing };
 enum class IdleAction : int {
     Blink, Peek, Smile, Surprise, Smug, Shy, Sleepy, Confused,
-    Greeting, Fidget, Celebrate, Indignant
+    Greeting, Fidget, Celebrate, Indignant, Patrol, Fetch
 };
 enum class MusicAction : int {
     HeadNod, TailWag, HandGroove, Bounce, Sway, HappyDance,
     LookToBeat, BigDance, EyesClosedNotes, SideStep, WinkGroove
 };
-constexpr int kIdleActionCount = 12;
+constexpr int kIdleActionCount = 14;
 constexpr int kMusicActionCount = 11;
 constexpr int kMusicBeatMs = 280;
 constexpr int kDefaultAutonomousSpeed = 100;
@@ -44,7 +44,7 @@ inline int duration(const Story &story) {
 inline Story idleStory(IdleAction action) {
     switch (action) {
         case IdleAction::Blink:
-            return {{F00, 600},{F01, 160},{F00, 700},{F01, 160},{F00, 900}};
+            return {{F00, 600},{F01, 230},{F00, 700},{F01, 230},{F00, 900}};
         case IdleAction::Peek:
             return {{F00, 450},{F02, 650},{F00, 550},
                     {F02, 700},{F00, 1400}};
@@ -71,6 +71,18 @@ inline Story idleStory(IdleAction action) {
             return {{F00, 600},{F04, 1650},{F16, 750},{F04, 850},{F00, 1000}};
         case IdleAction::Indignant:
             return {{F00, 500},{F12, 850},{F05, 650},{F12, 700},{F00, 1000}};
+        case IdleAction::Patrol:
+            // Casual side steps, then back to the same resting spot.
+            return {{F00, 700}, {IdleStepLeft, 600}, {F02, 650},
+                    {IdleStepRight, 600}, {F00, 600},
+                    {IdleStepLeft, 600}, {IdleStepRight, 600}, {F00, 950}};
+        case IdleAction::Fetch:
+            // Rare, deliberately complete mini-story. Shrinking and gift
+            // are authored ONLY for these new pose IDs, not generic animation.
+            return {{F00, 700}, {IdleStepLeft, 500}, {AwayFace, 650},
+                    {AwayNear, 600}, {AwayFar, 600}, {AwayTiny, 900},
+                    {AwayFar, 650}, {AwayReturn, 650}, {AwayFace, 500},
+                    {GiftReturn, 1350}, {F04, 700}, {F00, 1000}};
     }
     return {};
 }
@@ -120,8 +132,9 @@ inline Story musicStory(MusicAction action) {
             return musicBeatStory({F00, H04, H05, F16, H04, H05,
                                    F04, H04, H05, F16, H04, F00});
         case MusicAction::LookToBeat:
-            return musicBeatStory({F00, F02, F09, F10, F02, F09,
-                                   F10, F02, F09, F10, F02, F00});
+            // Hold occasional winks for two beats; not an eye flip every 280ms.
+            return musicBeatStory({F00, F02, F02, F09, F09, F02,
+                                   F02, F10, F10, F02, F02, F00});
         case MusicAction::BigDance:
             return musicBeatStory({F00, H03, BounceUp, H04,
                                    BounceDown, H05, H03, BounceUp,
@@ -136,8 +149,9 @@ inline Story musicStory(MusicAction action) {
                                    StepRight, StepLeft, StepRight, StepLeft,
                                    StepRight, StepLeft, StepRight, F00});
         case MusicAction::WinkGroove:
-            return musicBeatStory({F00, F09, F10, H01, H02, F09,
-                                   F10, H01, H02, F09, F10, F00});
+            // The arms stay on beat; eye changes get breathing room.
+            return musicBeatStory({F00, F09, F09, H01, H02, F00,
+                                   F10, F10, H01, H02, F00, F00});
     }
     return {};
 }
@@ -223,6 +237,9 @@ public:
 
     [[nodiscard]] int pose() const { return pose_; }
     [[nodiscard]] Activity activity() const { return activity_; }
+    [[nodiscard]] bool idleResting() const {
+        return activity_ == Activity::Idle && story_.isEmpty();
+    }
     [[nodiscard]] int autonomousSpeed() const { return speed_; }
     [[nodiscard]] bool featuredMusic() const {
         return activity_ == Activity::Music && inFeaturedMusic_;

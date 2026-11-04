@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(crt-clock VERSION 0.5.8 LANGUAGES CXX)
+project(crt-clock VERSION 0.5.9 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -18,3 +18,13 @@ endif()
 
 install(TARGETS crt-clock RUNTIME DESTINATION bin)
 install(FILES packaging/crt-clock.desktop DESTINATION share/applications)
+
+# Opt-in integration suite run by GitHub Actions under Xvfb + real XFWM4.
+# The default local CTest remains display independent.
+option(CRT_XFWM4_INTEGRATION_TEST "Test X11 workspace switching with XFWM4" OFF)
+if(CRT_XFWM4_INTEGRATION_TEST)
+    add_executable(crt-clock-workspace-tests tests/workspace_xfwm4_test.cpp)
+    target_include_directories(crt-clock-workspace-tests PRIVATE src)
+    target_link_libraries(crt-clock-workspace-tests PRIVATE Qt6::Widgets X11::X11)
+    add_test(NAME workspace-xfwm4 COMMAND crt-clock-workspace-tests)
+endif()
