@@ -551,8 +551,8 @@ public:
         });
         connect(dialog, &QObject::destroyed, this, [this] {
             settingsWindow_ = nullptr;
-            // The settings window may change how XFWM4 handles our tool
-            // window. Reassert affinity after dialog teardown and WM updates.
+            // The settings window may change workspace affinity after focus
+            // changes. Reassert after dialog teardown and WM updates.
             QTimer::singleShot(0, this, [this] { reassertWorkspaceStickiness(); });
             QTimer::singleShot(250, this, [this] { reassertWorkspaceStickiness(); });
             QTimer::singleShot(900, this, [this] { reassertWorkspaceStickiness(); });
@@ -709,9 +709,8 @@ private:
         selected_ = -1;
         if (save) redraw();
         applyMode();
-        // Switching from Qt::WindowStaysOnTopHint to WindowStaysOnBottomHint
-        // recreates the X11 widget window. XFWM4 can drop its workspace
-        // assignment after the first map/WM state requests have completed.
+        // Switching top/bottom hints recreates the native X11 window.
+        // Reassert the workspace assignment after WM remapping finishes.
         // Reassert only on this transition, including late WM processing.
         for (const int delayMs : {0, 250, 900, 2000, 4500}) {
             QTimer::singleShot(delayMs, this, [this] {
@@ -757,17 +756,13 @@ private:
     }
     void applyMode() {
         hide();
-        Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint;
-        if (editing_) flags |= Qt::WindowStaysOnTopHint;
-        else flags |= Qt::WindowDoesNotAcceptFocus |
-                      Qt::WindowStaysOnBottomHint;
-        setWindowFlags(flags);
+        setWindowFlags(desktop::widgetWindowFlags(editing_));
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
         setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
         setGeometry(editing_ ? screen_ : bounds(cfg_));
-        // Publish the desktop hint before map, then notify XFWM4 again after
-        // its manage/map cycle. hide()/setWindowFlags() recreates X11 windows.
+        // Publish the desktop hint before map, then request from XFWM4 again
+        // after it manages the new XID. hide()/setWindowFlags() remaps X11.
         desktop::keepOnEveryWorkspace(winId());
         show();
         QTimer::singleShot(0, this, [this] {
@@ -776,9 +771,11 @@ private:
         QTimer::singleShot(350, this, [this] {
             desktop::keepOnEveryWorkspace(winId());
         });
-        QTimer::singleShot(1200, this, [this] {
-            desktop::keepOnEveryWorkspace(winId());
-        });
+        for (const int delayMs : {200, 700, 1500, 3000, 5000}) {
+            QTimer::singleShot(delayMs, this, [this] {
+                if (isVisible()) desktop::keepOnEveryWorkspace(winId());
+            });
+        }
         if (editing_) { raise(); activateWindow(); setFocus(); }
     }
 
