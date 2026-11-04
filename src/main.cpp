@@ -1074,23 +1074,41 @@ private:
 
     void rebuildMatrix() {
         if (matrix_.active()) {
-            const QImage glyphs = matrix_.image(cfg_.green, cfg_.brightness);
-            // Run the same pixel scale and phosphor glow as the clock/pet.
-            // Static scanlines, aperture grille and ripple are shared by both
-            // layers in paintEvent after the perspective transformation.
-            matrixFrame_ = crtComposite(glyphs, Qt::transparent, 0,
-                                         cfg_.glow, cfg_.pixelScale, false,
-                                         cfg_.dim);
+            // Only the far-right 108px actually contains typing glyphs.
+            // CRT glow on this strip is about 4.4x cheaper than processing
+            // all 480 columns every tick while the user types.
+            const QImage glyphs = matrix_.stripImage(cfg_.green, cfg_.brightness);
+            const QImage strip = crtComposite(glyphs, Qt::transparent, 0,
+                                              cfg_.glow, cfg_.pixelScale, false,
+                                              cfg_.dim);
+            QImage full(W, H, QImage::Format_ARGB32_Premultiplied);
+            full.fill(Qt::transparent);
+            QPainter p(&full);
+            p.drawImage(QPoint(MatrixRain::StripX, 0), strip);
+            p.end();
+            matrixFrame_ = std::move(full);
         } else {
             matrixFrame_ = QImage();
         }
+        matrixGreen_ = cfg_.green;
+        matrixBrightness_ = cfg_.brightness;
+        matrixGlow_ = cfg_.glow;
+        matrixPixelScale_ = cfg_.pixelScale;
     }
     void redraw() {
         frame_ = canvas_.render(cfg_, animator_.pose(), clockIntensity_,
                                 joyTail_, musicStreamPhase_, idleBreathPhase_,
                                 animator_.giftVisual(elapsed_.elapsed()),
                                 animator_.motionVisual(elapsed_.elapsed()));
-        if (matrix_.active()) rebuildMatrix();
+        // Matrix content already rebuilds in matrix_.advance(). Animation
+        // redraws must NOT redo a second expensive CRT glow pass on typing
+        // glyphs unless their visual settings have actually changed.
+        if (matrix_.active() &&
+            (matrixGreen_ != cfg_.green ||
+             matrixBrightness_ != cfg_.brightness ||
+             matrixGlow_ != cfg_.glow ||
+             matrixPixelScale_ != cfg_.pixelScale))
+            rebuildMatrix();
         update();
     }
     void applyMode() {
@@ -1118,6 +1136,10 @@ private:
     MatrixRain matrix_;
     pet::JoyTail joyTail_;
     QImage matrixFrame_;
+    QColor matrixGreen_;
+    int matrixBrightness_ = -1;
+    int matrixGlow_ = -1;
+    int matrixPixelScale_ = -1;
     QTimer tick_;
     QElapsedTimer elapsed_;
     std::unique_ptr<KeyboardActivity> keyboard_;
