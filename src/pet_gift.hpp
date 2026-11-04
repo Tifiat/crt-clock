@@ -10,7 +10,7 @@ enum class GiftKind : int { StarFly, ArcFly, BurstSad, BurstCry, Pulse };
 constexpr int kGiftKindCount = 5;
 
 enum class GiftCue : int {
-    Inactive, Present, FlyStraight, FlyArc, Charge, Burst,
+    Inactive, Carry, Present, Transfer, FlyStraight, FlyArc, Charge, Burst,
     TearLeft, TearRight, Pulse
 };
 
@@ -20,6 +20,7 @@ struct GiftVisual {
     GiftCue cue = GiftCue::Inactive;
     GiftKind kind = GiftKind::StarFly;
     double progress = 0.0;
+    int carryDx = 0; // the carried gift follows each approaching body pose
     [[nodiscard]] bool active() const { return cue != GiftCue::Inactive; }
 };
 
