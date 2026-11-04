@@ -272,6 +272,9 @@ class ClockWindow final : public QWidget {
 public:
     ClockWindow() : screen_(QGuiApplication::primaryScreen()->geometry()), cfg_(screen_) {
         cfg_.load();
+        // Flags are set ONCE: calibration must never hide/reparent/recreate
+        // the native X11 window when entering or leaving edit mode.
+        setWindowFlags(desktop::widgetWindowFlags());
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating);
         setMouseTracking(true);
@@ -709,12 +712,11 @@ private:
         selected_ = -1;
         if (save) redraw();
         applyMode();
-        // Switching top/bottom hints recreates the native X11 window.
-        // Reassert the workspace assignment after WM remapping finishes.
-        // Reassert only on this transition, including late WM processing.
-        for (const int delayMs : {0, 250, 900, 2000, 4500}) {
+        // No native window recreation: only EWMH above/below and geometry
+        // change, preserving its original all-desktops assignment.
+        for (const int delayMs : {0, 250, 900}) {
             QTimer::singleShot(delayMs, this, [this] {
-                if (!editing_) reassertWorkspaceStickiness();
+                if (!editing_) requestWindowMode();
             });
         }
     }
@@ -755,28 +757,38 @@ private:
         update();
     }
     void applyMode() {
-        hide();
-        setWindowFlags(desktop::widgetWindowFlags(editing_));
-        setAttribute(Qt::WA_TranslucentBackground);
+        // Qt::setWindowFlags() previously hid/reparented this window on
+        // EVERY Enter/Escape, causing XFWM4 to lose the all-desktops state.
+        // This mode switch changes geometry, stacking and focus only.
+        const bool firstMap = !isVisible();
         setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
         setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
         setGeometry(editing_ ? screen_ : bounds(cfg_));
-        // Publish the desktop hint before map, then request from XFWM4 again
-        // after it manages the new XID. hide()/setWindowFlags() remaps X11.
-        desktop::keepOnEveryWorkspace(winId());
-        show();
-        QTimer::singleShot(0, this, [this] {
+        if (firstMap) {
             desktop::keepOnEveryWorkspace(winId());
-        });
-        QTimer::singleShot(350, this, [this] {
-            desktop::keepOnEveryWorkspace(winId());
-        });
-        for (const int delayMs : {200, 700, 1500, 3000, 5000}) {
+            show();
+        }
+        requestWindowMode();
+        // WM can process focus/stacking later. Same XID is used in every
+        // callback; no hide/show and no setWindowFlags after construction.
+        for (int delayMs : {0, 250, 900}) {
             QTimer::singleShot(delayMs, this, [this] {
-                if (isVisible()) desktop::keepOnEveryWorkspace(winId());
+                if (isVisible()) requestWindowMode();
             });
         }
-        if (editing_) { raise(); activateWindow(); setFocus(); }
+        if (editing_) {
+            raise();
+            activateWindow();
+            setFocus(Qt::OtherFocusReason);
+        } else {
+            lower();
+        }
+    }
+
+    void requestWindowMode() {
+        if (!isVisible()) return;
+        desktop::keepOnEveryWorkspace(winId());
+        desktop::requestStacking(winId(), editing_);
     }
 
     QRect screen_;
