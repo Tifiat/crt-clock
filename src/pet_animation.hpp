@@ -233,50 +233,81 @@ inline Story musicGrooveStory() {
 inline Story musicStory(MusicAction action) {
     switch (action) {
         case MusicAction::HeadNod:
+            // Same 280ms beat, but an actual sustained nod instead of a
+            // 2-second glimpse at 146% speed.
             return musicBeatStory({F00, NodDown, NodUp, NodDown, NodUp,
+                                   NodDown, NodUp, NodDown, NodUp,
+                                   NodDown, NodUp, NodDown, NodUp,
+                                   NodDown, NodUp, NodDown, NodUp,
                                    NodDown, NodUp, NodDown, NodUp,
                                    NodDown, NodUp, F00});
         case MusicAction::TailWag:
-            // Preserve the historic backside silhouette and central tail.
             return musicBeatStory({F00, H03, B00, B01, B02, B01, B02,
-                                   B01, B02, B01, B02, B00, H03, F00});
-        case MusicAction::HandGroove:
-            return musicBeatStory({H00, H01, H02, H03, H01, H02,
-                                   H03, H01, H02, H03, H01, H00});
+                                   B01, B02, B01, B02, B01, B02,
+                                   B01, B02, B00, H03, F00});
+        case MusicAction::HandGroove: {
+            auto story = musicBeatStory({H00, H01, H02, H03, H01, H02,
+                                        H03, H01, H02, H03, H01, H02,
+                                        H03, H01, H02, H03, H01, H00});
+            int last = 0;
+            for (auto &frame : story) {
+                const int x = frame.pose == H00 ? 0 :
+                              frame.pose == H01 ? -6 : 6;
+                frame.moveFrom = last;
+                frame.moveTo = x;
+                last = x;
+            }
+            return story;
+        }
         case MusicAction::Bounce:
             return musicBeatStory({F00, BounceUp, BounceDown, BounceUp,
                                    BounceDown, BounceUp, BounceDown,
                                    BounceUp, BounceDown, BounceUp,
-                                   BounceDown, F00});
-        case MusicAction::Sway:
-            return musicBeatStory({F00, SwayLeft, SwayRight, SwayLeft,
-                                   SwayRight, SwayLeft, SwayRight,
-                                   SwayLeft, SwayRight, SwayLeft,
-                                   SwayRight, F00});
+                                   BounceDown, BounceUp, BounceDown,
+                                   BounceUp, BounceDown, F00});
+        case MusicAction::Sway: {
+            auto story = musicBeatStory({F00, SwayLeft, SwayRight, SwayLeft,
+                                        SwayRight, SwayLeft, SwayRight,
+                                        SwayLeft, SwayRight, SwayLeft,
+                                        SwayRight, SwayLeft, SwayRight,
+                                        SwayLeft, SwayRight, SwayLeft,
+                                        SwayRight, F00});
+            for (auto &frame : story)
+                frame.streak = frame.pose == SwayLeft ? -1 :
+                               frame.pose == SwayRight ? 1 : 0;
+            return story;
+        }
         case MusicAction::HappyDance:
             return musicBeatStory({F00, H04, H05, F16, H04, H05,
+                                   F04, H04, H05, F16, H04, H05,
                                    F04, H04, H05, F16, H04, F00});
         case MusicAction::LookToBeat:
-            // Hold occasional winks for two beats; not an eye flip every 280ms.
             return musicBeatStory({F00, F02, F02, F09, F09, F02,
-                                   F02, F10, F10, F02, F02, F00});
+                                   F02, F10, F10, F02, F02,
+                                   F09, F09, F02, F02, F10, F10, F00});
         case MusicAction::BigDance:
             return musicBeatStory({F00, H03, BounceUp, H04,
                                    BounceDown, H05, H03, BounceUp,
-                                   H04, BounceDown, H05, F00});
+                                   H04, BounceDown, H05, H03,
+                                   BounceUp, H04, BounceDown, H05,
+                                   H03, F00});
         case MusicAction::EyesClosedNotes:
             return musicBeatStory({F00, ListenNote0, ListenNote1,
                                    ListenNote2, ListenNote3, ListenNote0,
                                    ListenNote1, ListenNote2, ListenNote3,
-                                   ListenNote0, ListenNote1, F00});
+                                   ListenNote0, ListenNote1, ListenNote2,
+                                   ListenNote3, ListenNote0, ListenNote1,
+                                   ListenNote2, ListenNote3, F00});
         case MusicAction::SideStep:
             return musicBeatStory({F00, StepLeft, StepRight, StepLeft,
                                    StepRight, StepLeft, StepRight, StepLeft,
+                                   StepRight, StepLeft, StepRight, StepLeft,
                                    StepRight, StepLeft, StepRight, F00});
         case MusicAction::WinkGroove:
-            // The arms stay on beat; eye changes get breathing room.
             return musicBeatStory({F00, F09, F09, H01, H02, F00,
-                                   F10, F10, H01, H02, F00, F00});
+                                   F10, F10, H01, H02, F00,
+                                   F09, F09, H01, H02, F00,
+                                   F10, F10, H01, H02, F00});
     }
     return {};
 }
