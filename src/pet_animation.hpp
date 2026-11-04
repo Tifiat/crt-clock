@@ -209,6 +209,19 @@ inline Story typingStory() {
 // timeline is deliberately kept at its fixed 115ms responsiveness.
 class Animator {
 public:
+    // Manual, one-shot preview for rare Fetch endings; keeps normal timers,
+    // action priorities and random selection untouched once it finishes.
+    void previewGift(GiftKind kind, qint64 nowMs) {
+        if (activity_ == Activity::Music && inFeaturedMusic_)
+            pendingFeatured_ = currentFeatured_;
+        giftKind_ = kind;
+        activity_ = Activity::Idle;
+        inFeaturedMusic_ = false;
+        currentFeatured_ = -1;
+        previewActive_ = true;
+        begin(fetchStory(kind), nowMs);
+    }
+
     void setAutonomousSpeed(int percent, qint64 nowMs) {
         const int next = std::clamp(percent, kMinAutonomousSpeed, kMaxAutonomousSpeed);
         if (next == speed_) return;
@@ -224,8 +237,12 @@ public:
     }
 
     bool advance(qint64 nowMs, bool typing, bool playing) {
+        // The explicit preview plays through even with music in the
+        // background, but typing retains its normal highest priority.
+        if (typing) previewActive_ = false;
         const Activity desired = typing ? Activity::Typing :
-                                 playing ? Activity::Music : Activity::Idle;
+                                 (playing && !previewActive_) ? Activity::Music :
+                                 Activity::Idle;
         if (desired != activity_) {
             // A featured dance is only considered completed after its final
             // frame. Typing/pausing must not silently consume a bag action.
@@ -273,6 +290,7 @@ public:
                 } else {
                     story_.clear();
                     pose_ = F00;
+                    previewActive_ = false;
                     idleDue_ = nowMs +
                         scaledDuration(QRandomGenerator::global()->bounded(6500, 14500));
                 }
@@ -345,6 +363,7 @@ private:
     int lastPose_ = -1;
     int speed_ = kDefaultAutonomousSpeed;
     bool inFeaturedMusic_ = false;
+    bool previewActive_ = false;
     int currentFeatured_ = -1;
     int pendingFeatured_ = -1;
     ShuffleBag musicCycle_{kMusicActionCount};
