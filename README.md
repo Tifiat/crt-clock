@@ -8,7 +8,7 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
-- **Animated pet:** 14 idle stories with subtle breathing/animated motion marks, a rare walk-away-and-gift story, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music continuously emits six rising vector notes (also during closed-eye listening). Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **Animated pet:** 14 idle stories with subtle breathing, a rare walk-away, fully vanish, and face-forward side-return story with five gift outcomes, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music emits a dense staggered three-column vector-note stream in the same strip as typing Matrix (also during closed-eye listening). Gift effects include flying stars, fading trails, a multiring burst with moving shards, and alternating sad tears. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
 - **Desktop integration:** XFCE/X11 all-workspace hints with a stable X11 window ID through calibration and real XFWM4 regression tests and optional XDG autostart, with a right-click settings menu.
 
 **Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, clock-flicker frequency (0 = off, 100 = about every 4 seconds), and autonomous pet animation speed (50–180%, default 100). The pet speed controls idle/music only; typing stays at 115ms per frame. Font pickers list installed fonts and accept a typed family.
@@ -43,6 +43,11 @@ publishes it. GitHub alone cannot publish packages to AUR.
 | `B` / `F` (in calibration) | Background / frame |
 | `crt-clock --settings` or right-click | Appearance and animation settings |
 | `crt-clock --quit` | Stop the widget |
+| `crt-clock --preview-gift=star` | Preview the flying star story |
+| `crt-clock --preview-gift=arc` | Preview the curved star flight |
+| `crt-clock --preview-gift=pop` | Preview explosion, comic sadness and alternating tears |
+| `crt-clock --preview-gift=cry` | Preview stronger explosion and crying |
+| `crt-clock --preview-gift=pulse` | Preview pulsing gift and happy return |
 
 ### Perspective calibration
 
@@ -66,6 +71,11 @@ crt-clock >/dev/null 2>&1 &
 ```
 
 The `stash` step protects the local `PKGBUILD` version change that `makepkg` may leave behind. Restart the widget after installation (also after adding new system fonts); calibration and configuration are retained.
+
+A gift preview plays once in the **already running** widget through its
+single-instance IPC. It does not alter calibration/settings and does not need
+the rare `Fetch` idle shuffle to happen naturally. Typing can interrupt
+the preview; music resumes automatically afterwards.
 
 ## Build & test
 
