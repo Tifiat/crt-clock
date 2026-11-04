@@ -215,17 +215,57 @@ inline Story typingStory() {
 // timeline is deliberately kept at its fixed 115ms responsiveness.
 class Animator {
 public:
-    // Manual, one-shot preview for rare Fetch endings; keeps normal timers,
-    // action priorities and random selection untouched once it finishes.
-    void previewGift(GiftKind kind, qint64 nowMs) {
+    // One-shot previews do not consume the normal idle/music shuffle queues.
+    // The GUI can explicitly play every authored action, including typing,
+    // without waiting for chance or an actual MPRIS player.
+    void previewStory(Story sequence, Activity mode, qint64 nowMs) {
         if (activity_ == Activity::Music && inFeaturedMusic_)
             pendingFeatured_ = currentFeatured_;
-        giftKind_ = kind;
-        activity_ = Activity::Idle;
+        previewActive_ = true;
+        previewActivity_ = mode;
+        activity_ = mode;
         inFeaturedMusic_ = false;
         currentFeatured_ = -1;
-        previewActive_ = true;
-        begin(fetchStory(kind), nowMs);
+        begin(std::move(sequence), nowMs);
+    }
+    void previewGift(GiftKind kind, qint64 nowMs) {
+        giftKind_ = kind;
+        previewStory(fetchStory(kind), Activity::Idle, nowMs);
+    }
+    void previewIdle(IdleAction kind, qint64 nowMs) {
+        if (kind == IdleAction::Fetch) {
+            previewGift(GiftKind::StarFly, nowMs);
+        } else {
+            previewStory(idleStory(kind), Activity::Idle, nowMs);
+        }
+    }
+    void previewIdleBreathing(qint64 nowMs) {
+        previewStory({{F00, 6500}}, Activity::Idle, nowMs);
+    }
+    void previewMusic(MusicAction kind, qint64 nowMs) {
+        previewStory(musicStory(kind), Activity::Music, nowMs);
+    }
+    void previewGroove(qint64 nowMs) {
+        previewStory(musicGrooveStory(), Activity::Music, nowMs);
+    }
+    void previewTyping(qint64 nowMs) {
+        Story typing;
+        for (int repeat = 0; repeat < 5; ++repeat)
+            typing += typingStory(); // 2.3s to inspect paw motion.
+        previewStory(std::move(typing), Activity::Typing, nowMs);
+    }
+    [[nodiscard]] bool previewing(Activity mode) const {
+        return previewActive_ && activity_ == mode;
+    }
+    void stopPreview(qint64 nowMs) {
+        if (!previewActive_) return;
+        previewActive_ = false;
+        story_.clear();
+        inFeaturedMusic_ = false;
+        currentFeatured_ = -1;
+        pose_ = F00;
+        activity_ = Activity::Idle;
+        idleDue_ = nowMs + scaledDuration(2500);
     }
 
     void setAutonomousSpeed(int percent, qint64 nowMs) {
@@ -247,8 +287,8 @@ public:
         // background, but typing retains its normal highest priority.
         if (typing) previewActive_ = false;
         const Activity desired = typing ? Activity::Typing :
-                                 (playing && !previewActive_) ? Activity::Music :
-                                 Activity::Idle;
+                                 previewActive_ ? previewActivity_ :
+                                 playing ? Activity::Music : Activity::Idle;
         if (desired != activity_) {
             // A featured dance is only considered completed after its final
             // frame. Typing/pausing must not silently consume a bag action.
@@ -265,7 +305,8 @@ public:
             else pose_ = F00;
         }
 
-        if (activity_ == Activity::Idle && story_.isEmpty() && nowMs >= idleDue_) {
+        if (activity_ == Activity::Idle && !previewActive_ &&
+            story_.isEmpty() && nowMs >= idleDue_) {
             const auto action = static_cast<IdleAction>(idleCycle_.next());
             if (action == IdleAction::Fetch) {
                 giftKind_ = static_cast<GiftKind>(giftCycle_.next());
@@ -278,7 +319,11 @@ public:
         if (!story_.isEmpty() && nowMs >= nextFrame_) {
             ++frameIndex_;
             if (frameIndex_ >= story_.size()) {
-                if (activity_ == Activity::Music) {
+                if (previewActive_) {
+                    // Finish the selected test cleanly. Never switch straight
+                    // into another dance or repeat typing ad infinitum.
+                    stopPreview(nowMs);
+                } else if (activity_ == Activity::Music) {
                     if (inFeaturedMusic_) {
                         inFeaturedMusic_ = false;
                         currentFeatured_ = -1;
@@ -370,6 +415,7 @@ private:
     int speed_ = kDefaultAutonomousSpeed;
     bool inFeaturedMusic_ = false;
     bool previewActive_ = false;
+    Activity previewActivity_ = Activity::Idle;
     int currentFeatured_ = -1;
     int pendingFeatured_ = -1;
     ShuffleBag musicCycle_{kMusicActionCount};
