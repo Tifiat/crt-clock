@@ -8,8 +8,8 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
-- **Animated pet:** 14 idle stories with subtle breathing, a rare walk-away, fully vanish, and face-forward left-to-right return story with five gift outcomes, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music emits about four rows of dense staggered notes confined below the date (also during closed-eye listening). Gift effects include a gift visible in the pet's hand upon return, a hand-off to the left paw, waves or long arcs across the full canvas with obvious comet tails, a multiring burst with moving shards, and separate slow tears. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
-- **Animation debugging:** a third context-menu entry opens 4 preview tabs covering 14 idle actions, baseline groove + 11 music dances, typing/Matrix, and 5 distinct gift endings. Autonomous speed, MPRIS and typing switches are grouped there. One-shot previews never consume shuffled action queues.
+- **Animated pet:** 15 idle stories with subtle breathing, a rare walk-away, fully vanish, and face-forward left-to-right return story with five gift outcomes, continuous joyful-eye tail wag, and 9 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music emits about four rows of dense staggered notes confined below the date (also during closed-eye listening). Gift effects include a gift visible in the pet's hand upon return, a hand-off to the left paw, waves or long arcs across the full canvas with obvious comet tails, a multiring burst with moving shards, and separate slow tears. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **Animation debugging:** a third context-menu entry opens 4 preview tabs covering 15 idle actions, baseline groove + 9 music dances, typing/Matrix, and 5 distinct gift endings. Autonomous speed, MPRIS and typing switches are grouped there. One-shot previews never consume shuffled action queues.
 - **Desktop integration:** XFCE/X11 all-workspace hints with a stable X11 window ID through calibration and real XFWM4 regression tests and optional XDG autostart, with a right-click settings menu.
 
 **Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, clock-flicker frequency (0 = off, 100 = about every 4 seconds), and autonomous pet animation speed (50–180%, default 100). The pet speed controls active idle/music motions, while expressive holds (glances, sleep, crying and gift flights) retain their readable real-time durations. Typing stays at 115ms per frame. Font pickers list installed fonts and accept a typed family.
@@ -93,7 +93,7 @@ ctest --test-dir build --output-on-failure
 
 ## Development
 
-Pet frames, animation sequences, and rendering are separate modules. The music mode alternates a baseline 8-beat groove with one featured dance drawn from an 11-action shuffle bag (no repeated action until all 11 have completed, with no immediate repeat across shuffle cycles; typing replays any interrupted performance). Tempo follows a fixed frame clock rather than measuring musical beats. See [animation architecture](docs/ANIMATION_ARCHITECTURE.md) and the [approved animation catalog](docs/ANIMATION_CATALOG.md) before extending the pet.
+Pet frames, animation sequences, and rendering are separate modules. The music mode alternates a baseline 8-beat groove with one featured dance drawn from an 9-action shuffle bag (no repeated action until all 11 have completed, with no immediate repeat across shuffle cycles; typing replays any interrupted performance). Tempo follows a fixed frame clock rather than measuring musical beats. See [animation architecture](docs/ANIMATION_ARCHITECTURE.md) and the [approved animation catalog](docs/ANIMATION_CATALOG.md) before extending the pet.
 
 Session startup, X11 workspace behavior, and settings migration: [desktop integration](docs/DESKTOP_INTEGRATION.md).
 
@@ -104,8 +104,8 @@ Real desktop screenshots will replace illustrative imagery when available. See t
 Right-click the widget → **Настройки анимации** (or `crt-clock --animations`).
 The 4 tabs contain:
 
-- **Idle**: breathing + all 14 authored actions (including the rare Fetch).
-- **Music**: ordinary Groove + each of the 11 featured dances.
+- **Idle**: breathing + all 15 authored actions (including the rare Fetch).
+- **Music**: ordinary Groove + each of the 9 featured dances.
 - **Typing**: typing paws plus 11 synthetic Matrix glyphs, never the typed text.
 - **Gifts**: five separate endings, including slow flights, burst sadness and crying.
 
@@ -151,3 +151,55 @@ room for gifts; the perspective calibration and X11 window mode are unchanged.
 - All original glyph IDs, calibration geometry, X11 workspace handling
   and per-user saved settings are preserved. The four animation-debug
   tabs still preview every individual scenario.
+
+## v0.6.3 — Rebalanced scenes and CPU optimization
+
+- Idle: Peek now turns both eyes aside **once**, then holds before returning.
+  Shy and Indignant each have one coherent expression instead of repeatedly
+  switching the eyes. The original blink is unchanged.
+  Added `WinkLeftRight`: one left-eye wink and one right-eye wink, only in
+  Idle, never during music.
+- Music: remove `LookToBeat` and `WinkGroove`. Nine unique featured
+  dances remain in the shuffle bag, with the original groove preserved.
+- Patrol: no edge pauses, constant horizontal velocity across successive
+  steps, gentle vertical bob. Compensate the historic +/-9px pose offsets
+  so changing which leg is forward no longer makes the body jump ~18px.
+- Return from the left: the entire pet starts outside the 480px source
+  canvas. Four continuously interpolated Carry frames bring the **gift
+  into view first**, followed by the front-facing pet. No half-body
+  instantly appears at the start of the return.
+- While gifts are being presented, charged, flying, pulsing or while the
+  character is sad/crying, gentle idle breathing continues whenever the
+  pet is not physically moving or reacting to the explosion.
+- Cached renderer: static clock/date/background CRT glow rebuilds only
+  on minute change, flicker or appearance change. Pet glyphs use a lazily
+  generated 2x supersampled bitmap atlas, then smooth fractional movement
+  and mirror transforms at **the same 25 FPS**. Most dynamic frames use
+  only a 480x128 lower strip for the two CRT glow passes; high-flying
+  gifts and explosions still use the entire height when required.
+- Typing Matrix composites its real 108px-wide right-side glyph strip,
+  not the full 480px width, and is **not** rebuilt merely because
+  the pet changes animation frames. CRT settings, glow, pixel scale and
+  existing Matrix animation behavior remain available.
+
+The remaining 8-point perspective draw and XFCE compositor can still
+consume substantial CPU, particularly on older machines. This release
+reduces repeated work but does not promise a fixed CPU percentage.
+
+### Optional built-in render profiler
+
+To measure the remaining bottleneck on the actual XFCE laptop, stop the
+running widget and launch the profiling build from a terminal:
+
+```bash
+crt-clock --quit
+CRT_CLOCK_PROFILE=1 crt-clock 2> /tmp/crt-clock-profile.log
+```
+
+During Idle, typing and a complex animation, look for one-line logs every
+six seconds beginning with `[crt-clock perf]`. The fields show redraw
+counts, average canvas composition time, average window paint time,
+Matrix recompositions and cumulative static-clock/sprite cache builds.
+The profiler is **off by default** and does not change saved settings.
+If the terminal is closed, this temporary attached profiling process may
+exit; use the documented `setsid -f` restart afterward.
