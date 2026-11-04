@@ -61,6 +61,7 @@ struct MotionVisual {
     bool mirror = false;
     int streak = 0; // -1: travelling left, +1: travelling right
     bool gait = false; // cancel legacy per-pose +/-9px shifts during whole-body walk
+    bool blush = false; // short cheek marks only for the Shy scene
 };
 
 // All front-facing frames occupy exactly ten fixed columns. Historical
