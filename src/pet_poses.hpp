@@ -15,7 +15,7 @@ constexpr int kFrontCellPixels = 31;
 constexpr int kBackCellPixels = 28;
 constexpr int kDefaultFontPixels = 43;
 constexpr int kDefaultStrokeStrength = 25;
-constexpr int kPoseCount = 53;
+constexpr int kPoseCount = 62;
 
 enum PoseId : int {
     F00 = 0, F01, F02, F03, F04, F05, F06, F07, F08, F09,
@@ -30,7 +30,10 @@ enum PoseId : int {
     StepLeft, StepRight,
     // Rare idle wandering/fetch actions; historic IDs remain unchanged.
     IdleStepLeft, IdleStepRight, AwayFace, AwayNear, AwayFar,
-    AwayTiny, AwayReturn, GiftReturn
+    AwayTiny, AwayReturn, GiftReturn,
+    // v0.6.0: a hidden pause, front-facing side entrance and separate sadness.
+    AwayGone, ReturnPeek, ReturnSide, ReturnApproach, ReturnCenter,
+    SadSoft, SadComic, SadCry, SadAngry
 };
 
 struct Pose {
@@ -45,6 +48,9 @@ struct Pose {
     double retreatScale = 1.0; // only for the authored idle 'fetch' story
     int retreatDx = 0;
     bool carriesGift = false;
+    bool hidden = false;
+    int eyeDy = 0; // sad expressions only, keep eye positions in fixed columns
+    int mouthDy = 0; // lower the mouth without shrinking the face
 };
 
 // All front-facing frames occupy exactly ten fixed columns. Historical
@@ -139,6 +145,44 @@ inline Pose frame(int id) {
         case GiftReturn:
             p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");
             p.carriesGift = true;
+            break;
+        case AwayGone:
+            p.hidden = true; // genuine empty pause before the new entrance
+            break;
+        case ReturnPeek:
+            p.line = QStringLiteral("(っ｡◕‿‿◕｡)づ");
+            p.bodyDx = 240; // only face/arm peeks in from the right edge
+            break;
+        case ReturnSide:
+            p.line = QStringLiteral("(っ｡◕‿‿◕｡)づ");
+            p.bodyDx = 155;
+            break;
+        case ReturnApproach:
+            p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");
+            p.bodyDx = 70;
+            break;
+        case ReturnCenter:
+            p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");
+            break;
+        case SadSoft:
+            p.line = QStringLiteral("(づ｡◡︵︵◡｡)づ");
+            p.eyeDy = -3;
+            p.mouthDy = 4;
+            break;
+        case SadComic:
+            p.line = QStringLiteral("(づ｡╥︵︵╥｡)づ");
+            p.eyeDy = -5;
+            p.mouthDy = 5;
+            break;
+        case SadCry:
+            p.line = QStringLiteral("(づ｡;﹏﹏;｡)づ");
+            p.eyeDy = -4;
+            p.mouthDy = 5;
+            break;
+        case SadAngry:
+            p.line = QStringLiteral("(づ｡ಠ︵︵ಠ｡)づ");
+            p.eyeDy = -3;
+            p.mouthDy = 3;
             break;
         default: break;  // F00/H00 are the original reference pose
     }
