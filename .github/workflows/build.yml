@@ -7,6 +7,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Qt 6
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake qt6-base-dev libx11-dev
+      - name: Validate AUR packaging scripts
+        run: |
+          bash -n packaging/aur/PKGBUILD
+          bash -n packaging/aur/publish.sh
+          grep -q '^pkgname=crt-clock-git
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test core logic
+        run: ctest --test-dir build --output-on-failure
+ packaging/aur/PKGBUILD
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
