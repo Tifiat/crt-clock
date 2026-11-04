@@ -82,7 +82,7 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
     p.setClipRect(QRectF(0, 0, 480, 320));
 
     switch (visual.cue) {
-        case GiftCue::None: break;
+        case GiftCue::Inactive: break;
         case GiftCue::Present: {
             const qreal pulse = 1.0 + .04 * std::sin(t * 2.0 * std::numbers::pi);
             if (isBurst(visual.kind)) giftBox(p, origin, 25 * pulse, color);
