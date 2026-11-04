@@ -4,6 +4,8 @@
 #include "pet_sequence.hpp"
 #include <QRandomGenerator>
 #include <QVector>
+#include <algorithm>
+#include <initializer_list>
 #include <QtGlobal>
 #include <utility>
 
@@ -16,10 +18,14 @@ enum class IdleAction : int {
 };
 enum class MusicAction : int {
     HeadNod, TailWag, HandGroove, Bounce, Sway, HappyDance,
-    LookToBeat, BigDance
+    LookToBeat, BigDance, EyesClosedNotes, SideStep, WinkGroove
 };
 constexpr int kIdleActionCount = 12;
-constexpr int kMusicActionCount = 8;
+constexpr int kMusicActionCount = 11;
+constexpr int kMusicBeatMs = 280;
+constexpr int kDefaultAutonomousSpeed = 100;
+constexpr int kMinAutonomousSpeed = 50;
+constexpr int kMaxAutonomousSpeed = 180;
 
 struct Frame {
     int pose;
@@ -69,43 +75,67 @@ inline Story idleStory(IdleAction action) {
     return {};
 }
 
-// One full performance per selected action. Each music action is eventually
-// selected because the Animator runs a permutation of all eight actions.
+// All music poses advance on the same beat, including the backside wag.
+// The standard groove runs between randomly shuffled featured performances.
+inline Story musicBeatStory(std::initializer_list<int> poses) {
+    Story story;
+    story.reserve(static_cast<qsizetype>(poses.size()));
+    for (int pose : poses) story.append({pose, kMusicBeatMs});
+    return story;
+}
+
+inline Story musicGrooveStory() {
+    return musicBeatStory({F00, NodDown, NodUp, F17,
+                           NodDown, NodUp, F17, F00});
+}
+
+// Full featured performances: consistent movement tempo and a neutral exit.
+// Each is selected once from ShuffleBag before the next shuffled cycle.
 inline Story musicStory(MusicAction action) {
     switch (action) {
         case MusicAction::HeadNod:
-            return {{F00, 400},{NodDown, 400},{NodUp, 400},
-                    {NodDown, 400},{NodUp, 400},{NodDown, 400},
-                    {NodUp, 400},{F00, 850}};
+            return musicBeatStory({F00, NodDown, NodUp, NodDown, NodUp,
+                                   NodDown, NodUp, NodDown, NodUp,
+                                   NodDown, NodUp, F00});
         case MusicAction::TailWag:
-            // The original 4fc9d30 dance turns the pet around BEFORE the
-            // central bunny tail starts wagging, then returns to face front.
-            return {{F00, 360},{H03, 260},{B00, 360},
-                    {B01, 145},{B02, 145},{B01, 145},{B02, 145},
-                    {B01, 145},{B02, 145},{B01, 145},{B02, 145},
-                    {B01, 145},{B02, 145},{B00, 380},
-                    {H03, 260},{F00, 360}};
+            // Preserve the historic backside silhouette and central tail.
+            return musicBeatStory({F00, H03, B00, B01, B02, B01, B02,
+                                   B01, B02, B01, B02, B00, H03, F00});
         case MusicAction::HandGroove:
-            return {{H00, 400},{H01, 450},{H02, 450},{H03, 450},
-                    {H01, 450},{H02, 450},{H03, 450},{H00, 700}};
+            return musicBeatStory({H00, H01, H02, H03, H01, H02,
+                                   H03, H01, H02, H03, H01, H00});
         case MusicAction::Bounce:
-            return {{F00, 350},{BounceUp, 420},{BounceDown, 420},
-                    {BounceUp, 420},{BounceDown, 420},
-                    {BounceUp, 420},{BounceDown, 420},{F00, 620}};
+            return musicBeatStory({F00, BounceUp, BounceDown, BounceUp,
+                                   BounceDown, BounceUp, BounceDown,
+                                   BounceUp, BounceDown, BounceUp,
+                                   BounceDown, F00});
         case MusicAction::Sway:
-            return {{F00, 550},{SwayLeft, 500},{SwayRight, 500},
-                    {SwayLeft, 500},{SwayRight, 500},
-                    {SwayLeft, 500},{F00, 700}};
+            return musicBeatStory({F00, SwayLeft, SwayRight, SwayLeft,
+                                   SwayRight, SwayLeft, SwayRight,
+                                   SwayLeft, SwayRight, SwayLeft,
+                                   SwayRight, F00});
         case MusicAction::HappyDance:
-            return {{F00, 450},{H04, 470},{H05, 470},{F16, 600},
-                    {H04, 470},{H05, 470},{F04, 600},{F00, 600}};
+            return musicBeatStory({F00, H04, H05, F16, H04, H05,
+                                   F04, H04, H05, F16, H04, F00});
         case MusicAction::LookToBeat:
-            return {{F00, 480},{F02, 480},{F00, 480},
-                    {F02, 480},{F00, 480},{F02, 480},{F00, 680}};
+            return musicBeatStory({F00, F02, F09, F10, F02, F09,
+                                   F10, F02, F09, F10, F02, F00});
         case MusicAction::BigDance:
-            return {{F00, 450},{H03, 500},{BounceUp, 480},
-                    {H04, 480},{BounceDown, 480},{H05, 480},
-                    {H03, 500},{F00, 780}};
+            return musicBeatStory({F00, H03, BounceUp, H04,
+                                   BounceDown, H05, H03, BounceUp,
+                                   H04, BounceDown, H05, F00});
+        case MusicAction::EyesClosedNotes:
+            return musicBeatStory({F00, ListenNote0, ListenNote1,
+                                   ListenNote2, ListenNote3, ListenNote0,
+                                   ListenNote1, ListenNote2, ListenNote3,
+                                   ListenNote0, ListenNote1, F00});
+        case MusicAction::SideStep:
+            return musicBeatStory({F00, StepLeft, StepRight, StepLeft,
+                                   StepRight, StepLeft, StepRight, StepLeft,
+                                   StepRight, StepLeft, StepRight, F00});
+        case MusicAction::WinkGroove:
+            return musicBeatStory({F00, F09, F10, H01, H02, F09,
+                                   F10, H01, H02, F09, F10, F00});
     }
     return {};
 }
@@ -114,8 +144,24 @@ inline Story typingStory() {
     return {{T00, 115},{T01, 115},{T02, 115},{T01, 115}};
 }
 
+// The slider scales idle/music cadence and idle intervals; the typing
+// timeline is deliberately kept at its fixed 115ms responsiveness.
 class Animator {
 public:
+    void setAutonomousSpeed(int percent, qint64 nowMs) {
+        const int next = std::clamp(percent, kMinAutonomousSpeed, kMaxAutonomousSpeed);
+        if (next == speed_) return;
+        if (activity_ != Activity::Typing) {
+            if (!story_.isEmpty() && nextFrame_ > nowMs)
+                nextFrame_ = nowMs +
+                    std::max<qint64>(1, (nextFrame_ - nowMs) * speed_ / next);
+            if (activity_ == Activity::Idle && idleDue_ > nowMs)
+                idleDue_ = nowMs +
+                    std::max<qint64>(1, (idleDue_ - nowMs) * speed_ / next);
+        }
+        speed_ = next;
+    }
+
     bool advance(qint64 nowMs, bool typing, bool playing) {
         const Activity desired = typing ? Activity::Typing :
                                  playing ? Activity::Music : Activity::Idle;
@@ -123,9 +169,10 @@ public:
             activity_ = desired;
             story_.clear();
             frameIndex_ = 0;
-            idleDue_ = nowMs + 1200;
+            inFeaturedMusic_ = false;
+            idleDue_ = nowMs + scaledDuration(1200);
             if (desired == Activity::Typing) begin(typingStory(), nowMs);
-            else if (desired == Activity::Music) nextMusic(nowMs);
+            else if (desired == Activity::Music) begin(musicGrooveStory(), nowMs);
             else pose_ = F00;
         }
 
@@ -135,16 +182,26 @@ public:
         if (!story_.isEmpty() && nowMs >= nextFrame_) {
             ++frameIndex_;
             if (frameIndex_ >= story_.size()) {
-                if (activity_ == Activity::Music) nextMusic(nowMs);
-                else if (activity_ == Activity::Typing) begin(typingStory(), nowMs);
-                else {
+                if (activity_ == Activity::Music) {
+                    if (inFeaturedMusic_) {
+                        inFeaturedMusic_ = false;
+                        begin(musicGrooveStory(), nowMs);
+                    } else {
+                        inFeaturedMusic_ = true;
+                        begin(musicStory(static_cast<MusicAction>(musicCycle_.next())),
+                              nowMs);
+                    }
+                } else if (activity_ == Activity::Typing) {
+                    begin(typingStory(), nowMs);
+                } else {
                     story_.clear();
                     pose_ = F00;
-                    idleDue_ = nowMs + QRandomGenerator::global()->bounded(6500, 14500);
+                    idleDue_ = nowMs +
+                        scaledDuration(QRandomGenerator::global()->bounded(6500, 14500));
                 }
             } else {
                 pose_ = story_[frameIndex_].pose;
-                nextFrame_ = nowMs + story_[frameIndex_].durationMs;
+                nextFrame_ = nowMs + frameDuration(story_[frameIndex_].durationMs);
             }
         }
 
@@ -155,16 +212,24 @@ public:
 
     [[nodiscard]] int pose() const { return pose_; }
     [[nodiscard]] Activity activity() const { return activity_; }
+    [[nodiscard]] int autonomousSpeed() const { return speed_; }
+    [[nodiscard]] bool featuredMusic() const {
+        return activity_ == Activity::Music && inFeaturedMusic_;
+    }
+
 private:
-    void nextMusic(qint64 nowMs) {
-        begin(musicStory(static_cast<MusicAction>(musicCycle_.next())), nowMs);
+    [[nodiscard]] int scaledDuration(int durationMs) const {
+        return std::max(40, (durationMs * 100 + speed_ / 2) / speed_);
+    }
+    [[nodiscard]] int frameDuration(int durationMs) const {
+        return activity_ == Activity::Typing ? durationMs : scaledDuration(durationMs);
     }
     void begin(Story sequence, qint64 nowMs) {
         story_ = std::move(sequence);
         frameIndex_ = 0;
         if (story_.isEmpty()) { pose_ = F00; return; }
         pose_ = story_[0].pose;
-        nextFrame_ = nowMs + story_[0].durationMs;
+        nextFrame_ = nowMs + frameDuration(story_[0].durationMs);
     }
 
     Activity activity_ = Activity::Idle;
@@ -172,6 +237,8 @@ private:
     int frameIndex_ = 0;
     int pose_ = F00;
     int lastPose_ = -1;
+    int speed_ = kDefaultAutonomousSpeed;
+    bool inFeaturedMusic_ = false;
     ShuffleBag musicCycle_{kMusicActionCount};
     ShuffleBag idleCycle_{kIdleActionCount};
     qint64 nextFrame_ = 0;
