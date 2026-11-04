@@ -121,9 +121,9 @@ int main() {
             "gift-specific pose IDs must append after existing set");
     require(pet::frame(pet::AwayGone).hidden,
             "pet must fully disappear between departure and side return");
-    const auto entry = pet::fetchStory(pet::GiftKind::StarFly);
+    const auto returnStory = pet::fetchStory(pet::GiftKind::StarFly);
     int lastTo = -420, returnSteps = 0;
-    for (const auto &frame : entry) {
+    for (const auto &frame : returnStory) {
         if (frame.cue != pet::GiftCue::Carry) continue;
         require(frame.moveFrom == lastTo && frame.moveTo > frame.moveFrom,
                 "return motion must be continuous with no teleporting");
