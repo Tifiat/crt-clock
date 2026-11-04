@@ -214,7 +214,8 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
 
 QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
                   const pet::JoyTail &tail, int musicStreamPhase,
-                  int idleBreathPhase, const pet::GiftVisual &gift) {
+                  int idleBreathPhase, const pet::GiftVisual &gift,
+                  const pet::MotionVisual &motion) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -248,11 +249,12 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
         text.translate(0, idleBreathPhase == 2 ? -1 : (idleBreathPhase == 5 ? 1 : 0));
     pet::paint(text, petArea, cfg.petFont,
                cfg.pet, pet::visiblePose(pose, gift), petColor,
-               cfg.petFontSize, cfg.petStroke, tail);
+               cfg.petFontSize, cfg.petStroke, tail, motion);
     text.restore();
     if (stockPet) {
         // Gift effects and the musical stream are independent vector layers.
         // Nothing decorates ordinary idle, except gentle body breathing.
+        pet::paintGestureStreak(text, petArea, petColor, motion.streak);
         pet::paintGiftEffect(text, gift, petColor);
         pet::paintMusicStream(text, petColor, musicStreamPhase);
     }
@@ -989,7 +991,8 @@ private:
     void redraw() {
         frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_,
                             musicStreamPhase_, idleBreathPhase_,
-                            animator_.giftVisual(elapsed_.elapsed()));
+                            animator_.giftVisual(elapsed_.elapsed()),
+                            animator_.motionVisual(elapsed_.elapsed()));
         if (matrix_.active()) rebuildMatrix();
         update();
     }
