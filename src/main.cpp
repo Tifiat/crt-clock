@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
+#include <QDebug>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
@@ -499,6 +500,22 @@ public:
             update();
         }
         if (dirty) redraw();
+        if (profileEnabled_ && now >= nextProfileReport_) {
+            nextProfileReport_ = now + 6000;
+            const auto mean = [](quint64 total, quint64 count) {
+                return count ? double(total) / count / 1000000.0 : 0.0;
+            };
+            qInfo().nospace()
+                << "[crt-clock perf] redraws=" << renders_
+                << " avgCanvasMs=" << mean(renderTimeNs_, renders_)
+                << " paints=" << paints_
+                << " avgPaintMs=" << mean(paintTimeNs_, paints_)
+                << " matrixRebuilds=" << matrixRebuilds_
+                << " clockBuilds=" << canvas_.clockBuildCount()
+                << " cachedSpritesBuilt=" << canvas_.spriteBuildCount();
+            renders_ = paints_ = matrixRebuilds_ = 0;
+            renderTimeNs_ = paintTimeNs_ = 0;
+        }
     }
 
     void start() { editing_ = false; applyMode(); }
@@ -922,6 +939,8 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *) override {
+        QElapsedTimer timer;
+        if (profileEnabled_) timer.start();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -936,7 +955,13 @@ protected:
                                (elapsed_.elapsed() - rippleStart_) /
                                double(perspective::sweepDurationMs(cfg_.scanlineSpeed)),
                              cfg_.rippleStrength);
-        if (!editing_) return;
+        if (!editing_) {
+            if (profileEnabled_) {
+                ++paints_;
+                paintTimeNs_ += timer.nsecsElapsed();
+            }
+            return;
+        }
         QPolygonF to = perspective::outline(cfg_.quad);
         for (QPointF &point : to) point -= origin;
         p.setPen(QPen(QColor("#7BFFAA"), 2, Qt::DashLine));
@@ -971,7 +996,11 @@ protected:
         QFont f(cfg_.clockFont); f.setPixelSize(15); p.setFont(f);
         p.drawText(top.adjusted(12, 6, -6, -6), Qt::AlignLeft | Qt::TextWordWrap,
             QStringLiteral("CRT-CLOCK / КАЛИБРОВКА\n"
-                           "8 крайних: деформация • центр 9: перенос • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
+                           "8 крайних: деформация • центр 9: перенос • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));        if (profileEnabled_) {
+            ++paints_;
+            paintTimeNs_ += timer.nsecsElapsed();
+        }
+
     }
 
     void mousePressEvent(QMouseEvent *e) override {
@@ -1096,12 +1125,15 @@ private:
         } else {
             matrixFrame_ = QImage();
         }
+        if (profileEnabled_) ++matrixRebuilds_;
         matrixGreen_ = cfg_.green;
         matrixBrightness_ = cfg_.brightness;
         matrixGlow_ = cfg_.glow;
         matrixPixelScale_ = cfg_.pixelScale;
     }
     void redraw() {
+        QElapsedTimer timer;
+        if (profileEnabled_) timer.start();
         frame_ = canvas_.render(cfg_, animator_.pose(), clockIntensity_,
                                 joyTail_, musicStreamPhase_, idleBreathPhase_,
                                 animator_.giftVisual(elapsed_.elapsed()),
@@ -1115,6 +1147,10 @@ private:
              matrixGlow_ != cfg_.glow ||
              matrixPixelScale_ != cfg_.pixelScale))
             rebuildMatrix();
+        if (profileEnabled_) {
+            ++renders_;
+            renderTimeNs_ += timer.nsecsElapsed();
+        }
         update();
     }
     void applyMode() {
@@ -1167,6 +1203,13 @@ private:
     QDialog *settingsWindow_ = nullptr;
     QDialog *animationSettingsWindow_ = nullptr;
     quint64 previewSerial_ = 0;
+    const bool profileEnabled_ = qEnvironmentVariableIsSet("CRT_CLOCK_PROFILE");
+    qint64 nextProfileReport_ = 6000;
+    quint64 renders_ = 0;
+    quint64 paints_ = 0;
+    quint64 matrixRebuilds_ = 0;
+    quint64 renderTimeNs_ = 0;
+    quint64 paintTimeNs_ = 0;
     bool editing_ = false;
 };
 }
