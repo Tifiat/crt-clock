@@ -26,7 +26,7 @@ inline void requestStacking(WId nativeWindow, bool editing) {
     const Atom above = XInternAtom(dpy, "_NET_WM_STATE_ABOVE", False);
     const Atom below = XInternAtom(dpy, "_NET_WM_STATE_BELOW", False);
 
-    for (const auto [atom, add] : {
+    for (const auto &[atom, add] : {
              std::pair<Atom, bool>{above, editing},
              std::pair<Atom, bool>{below, !editing}}) {
         XEvent request{};
@@ -114,7 +114,10 @@ inline void keepOnEveryWorkspace(WId nativeWindow) {
 // across distinct XFCE workspaces. Checking (desktop || sticky) masked a real
 // regression when XFWM4 kept STICKY but moved the widget to one desktop.
 constexpr bool isAllDesktopsValue(unsigned long desktop) {
-    return desktop == 0xFFFFFFFFUL;
+    // XGetWindowProperty supplies CARDINAL/32 values in unsigned long slots.
+    // XFWM4/Xlib can sign-extend the special -1 sentinel on 64-bit hosts
+    // (0xffffffffffffffff instead of 0x00000000ffffffff).
+    return (desktop & 0xFFFFFFFFUL) == 0xFFFFFFFFUL;
 }
 inline bool isOnEveryWorkspace(WId nativeWindow) {
     Display *dpy = XOpenDisplay(nullptr);
