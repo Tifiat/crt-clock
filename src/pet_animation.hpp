@@ -237,6 +237,9 @@ public:
 
     [[nodiscard]] int pose() const { return pose_; }
     [[nodiscard]] Activity activity() const { return activity_; }
+    [[nodiscard]] bool idleResting() const {
+        return activity_ == Activity::Idle && story_.isEmpty();
+    }
     [[nodiscard]] int autonomousSpeed() const { return speed_; }
     [[nodiscard]] bool featuredMusic() const {
         return activity_ == Activity::Music && inFeaturedMusic_;
