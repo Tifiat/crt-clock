@@ -18,6 +18,7 @@
 #include "crt_style.hpp"
 #include "matrix_rain.hpp"
 #include "perspective.hpp"
+#include "perspective_raster_cache.hpp"
 // Include Xlib-facing header after all Qt headers: Xlib defines None.
 #include "desktop_workspace.hpp"
 #include "clock_flicker.hpp"
@@ -896,6 +897,83 @@ int main(int argc, char **argv) {
     const QPointF center = perspective::center(handles);
     close(center.x(), 150);
     close(center.y(), 100);
+
+    // A previously expensive four-cell perspective mapping is computed
+    // once. Each moving frame is bilinearly projected using the cached LUT.
+    // The second typing/Matrix source is composited over the pet, not warped
+    // in a second four-quad QPainter call.
+    perspective::RasterCache raster;
+    const auto rectangle = perspective::fromCorners({
+        QPointF(24, 18), QPointF(504, 18),
+        QPointF(504, 338), QPointF(24, 338)
+    });
+    const QSize viewport(545, 365);
+    require(raster.prepare(viewport, rectangle, QPointF(0,0)),
+            "first projection must build geometry");
+    require(!raster.prepare(viewport, rectangle, QPointF(0,0)) &&
+            raster.buildCount() == 1,
+            "unchanged projection must reuse its inverse geometry");
+    require(raster.mappedPixels() >= 150000,
+            "straight four-cell projective mapping must cover source canvas");
+
+    QImage baseLayer(480, 320, QImage::Format_ARGB32_Premultiplied);
+    baseLayer.fill(Qt::transparent);
+    {
+        QPainter p(&baseLayer);
+        p.fillRect(QRect(40, 70, 300, 140), QColor(25, 115, 43, 255));
+    }
+    QImage matrixLayer(480, 320, QImage::Format_ARGB32_Premultiplied);
+    matrixLayer.fill(Qt::transparent);
+    {
+        QPainter p(&matrixLayer);
+        p.fillRect(QRect(410, 245, 22, 32), QColor(250, 90, 10, 220));
+    }
+    const QImage baseline = raster.render(baseLayer);
+    const QImage combined = raster.render(baseLayer, matrixLayer);
+    require(baseline.size() == viewport &&
+            baseline.format() == QImage::Format_ARGB32_Premultiplied,
+            "raster should return an in-memory screen-sized premultiplied image");
+    require(baseline.pixelColor(120, 110) == baseLayer.pixelColor(96, 92),
+            "unwarped baseline must preserve a solid source pixel");
+    require(combined.pixelColor(120, 110) == baseline.pixelColor(120, 110),
+            "an unrelated matrix glyph cannot alter the rest of the clock");
+    require(combined.pixelColor(444, 274).red() > 130,
+            "Matrix must overlay clock glyphs after perspective");
+
+    QImage reference(viewport, QImage::Format_ARGB32_Premultiplied);
+    reference.fill(Qt::transparent);
+    {
+        QPainter p(&reference);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        perspective::draw(p, baseLayer, rectangle, QPointF(0, 0));
+        perspective::draw(p, matrixLayer, rectangle, QPointF(0, 0));
+    }
+    // Compare stable interior colors; raster may differ within ~1px of
+    // heavily antialiased clip boundaries, which are calibrated by Qt.
+    for (const QPoint pt : {QPoint(120,110), QPoint(200,140),
+                             QPoint(240,180), QPoint(445,275)}) {
+        const QColor actual = combined.pixelColor(pt);
+        const QColor expected = reference.pixelColor(pt);
+        require(std::abs(actual.red()-expected.red()) < 35 &&
+                std::abs(actual.green()-expected.green()) < 35 &&
+                std::abs(actual.blue()-expected.blue()) < 35 &&
+                std::abs(actual.alpha()-expected.alpha()) < 35,
+                "cached screen raster should match original Qt perspective colors");
+    }
+
+    auto skew = rectangle;
+    skew[0] += QPointF(5,12);
+    skew[4] += QPointF(11,4);
+    skew[7] += QPointF(-9,10);
+    require(raster.prepare(viewport, skew, QPointF(0,0)) &&
+            raster.buildCount() == 2,
+            "perspective adjustment must invalidate the cached pixel map");
+    const QImage bent = raster.render(baseLayer, matrixLayer);
+    require(!bent.isNull() && bent != combined,
+            "different eight-handle warp must produce a different raster");
+    require(!raster.prepare(viewport, skew, QPointF(0,0)),
+            "constant geometry must remain cached across animation frames");
 
     // Moving the central handle translates every corner/edge equally.
     const QPointF offset(13, -9);
