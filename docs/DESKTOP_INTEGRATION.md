@@ -78,3 +78,17 @@ workspaces. It checks property readback, stable XID, and actual viewability
 after Escape while switching each desktop. In CI it is run with
 `-DCRT_XFWM4_INTEGRATION_TEST=ON`; the default local build stays independent
 of any graphical display.
+
+### v0.6.1: settings division and detached manual launch
+
+Context menu order: **Калибровка перспективы**, **Настройки CRT**,
+**Настройки анимации**, then Quit. The third action opens an independent Qt
+dialog with four animation preview tabs and live Save/Cancel controls for
+autonomous speed, MPRIS reaction and typing response. This does not touch
+`desktop::applyWindowMode` or X11 workspace mapping. Single-instance IPC
+accepts `crt-clock --animations`.
+
+A manually backgrounded `crt-clock &` can receive hangup when its parent
+terminal closes. For manual detached startup use:
+`setsid -f crt-clock </dev/null >/dev/null 2>&1`.
+Prefer the existing opt-in XDG autostart checkbox for session startup.
