@@ -95,6 +95,16 @@ inline Story fetchStory(GiftKind kind) {
     return story;
 }
 
+// A gift flight shows two deliberate, slow expressions rather than a
+// neutral face for the entire 4.4s. No extra story frames are consumed, so
+// the gift trajectory and its comet tail stay continuous.
+inline int visiblePose(int scheduled, const GiftVisual &effect) {
+    if ((effect.cue == GiftCue::FlyStraight ||
+         effect.cue == GiftCue::FlyArc) && effect.progress >= .68)
+        return F07; // follows the star, then looks wistful as it leaves
+    return scheduled;
+}
+
 // Authored multi-second activities. The 100-200ms blink is a brief
 // moment INSIDE a complete story, never an independent glitchy action.
 inline Story idleStory(IdleAction action) {
