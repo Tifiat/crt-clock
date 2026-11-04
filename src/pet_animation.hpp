@@ -85,7 +85,7 @@ inline Frame carrying(int pose, int ms, int bodyOffset) {
 
 // One deliberate idle mini-story with five independent endings.
 // The departure ends in a genuinely invisible frame; returning from the
-// RIGHT uses regular front-facing glyphs at full size, not the rear silhouette.
+// LEFT uses regular front-facing glyphs at full size, not the rear silhouette.
 inline Story fetchStory(GiftKind kind) {
     Story story = {
         {F00, 750}, {IdleStepLeft, 650}, {AwayFace, 730},
@@ -336,8 +336,8 @@ inline Story typingStory() {
     return {{T00, 115},{T01, 115},{T02, 115},{T01, 115}};
 }
 
-// The slider scales idle/music cadence and idle intervals; the typing
-// timeline is deliberately kept at its fixed 115ms responsiveness.
+// The slider scales gesture cadence, not held emotions/idle gaps; typing
+// remains at a fixed 115ms for responsive global keyboard activity.
 class Animator {
 public:
     // One-shot previews do not consume the normal idle/music shuffle queues.
@@ -401,9 +401,8 @@ public:
                 !story_[frameIndex_].absoluteDuration)
                 nextFrame_ = nowMs +
                     std::max<qint64>(1, (nextFrame_ - nowMs) * speed_ / next);
-            if (activity_ == Activity::Idle && idleDue_ > nowMs)
-                idleDue_ = nowMs +
-                    std::max<qint64>(1, (idleDue_ - nowMs) * speed_ / next);
+            // Long quiet gaps between idle stories do not change with
+            // gesture tempo. Only the active gesture frame is rescaled.
         }
         speed_ = next;
     }
