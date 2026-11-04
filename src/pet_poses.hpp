@@ -150,16 +150,18 @@ inline Pose frame(int id) {
             p.hidden = true; // genuine empty pause before the new entrance
             break;
         case ReturnPeek:
-            p.line = QStringLiteral("(っ｡◕‿‿◕｡)づ");
-            p.bodyDx = 240; // only face/arm peeks in from the right edge
+            // Returns LEFT -> RIGHT, facing in the direction of travel.
+            // Right-hand entry made him look like he was walking backwards.
+            p.line = QStringLiteral("(づ｡◔‿‿◔｡)っ");
+            p.bodyDx = -200;
             break;
         case ReturnSide:
-            p.line = QStringLiteral("(っ｡◕‿‿◕｡)づ");
-            p.bodyDx = 155;
+            p.line = QStringLiteral("(づ｡◔‿‿◔｡)っ");
+            p.bodyDx = -125;
             break;
         case ReturnApproach:
-            p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");
-            p.bodyDx = 70;
+            p.line = QStringLiteral("(づ｡◔‿‿◔｡)っ");
+            p.bodyDx = -55;
             break;
         case ReturnCenter:
             p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");

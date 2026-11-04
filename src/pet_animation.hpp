@@ -46,47 +46,63 @@ inline int duration(const Story &story) {
 // RIGHT uses regular front-facing glyphs at full size, not the rear silhouette.
 inline Story fetchStory(GiftKind kind) {
     Story story = {
-        {F00, 650}, {IdleStepLeft, 500}, {AwayFace, 650},
-        {AwayNear, 620}, {AwayFar, 580}, {AwayTiny, 470},
-        {AwayGone, 1250}, // the pet is gone; keep clocks unaffected
-        {ReturnPeek, 440}, {ReturnSide, 440},
-        {ReturnApproach, 470}, {ReturnCenter, 560},
-        {ReturnCenter, 680, GiftCue::Present}
+        {F00, 750}, {IdleStepLeft, 650}, {AwayFace, 730},
+        {AwayNear, 680}, {AwayFar, 650}, {AwayTiny, 600},
+        // The gap is a deliberate pause, not a nearly instant reversal.
+        {AwayGone, 3300},
+        {ReturnPeek, 700}, {ReturnSide, 700},
+        {ReturnApproach, 750}, {ReturnCenter, 650},
+        {ReturnCenter, 1100, GiftCue::Present}
     };
     switch (kind) {
         case GiftKind::StarFly:
-            story += Story{{ReturnCenter, 1500, GiftCue::FlyStraight},
-                           {SadSoft, 950}, {F00, 850}};
+            story += Story{{F02, 4400, GiftCue::FlyStraight},
+                           {SadSoft, 1900}, {F13, 950}, {F00, 1050}};
             break;
         case GiftKind::ArcFly:
-            story += Story{{ReturnCenter, 1560, GiftCue::FlyArc},
-                           {SadSoft, 1150}, {F00, 850}};
+            story += Story{{F02, 4600, GiftCue::FlyArc},
+                           {SadSoft, 2150}, {F13, 1050}, {F00, 1100}};
             break;
         case GiftKind::Pulse:
-            story += Story{{ReturnCenter, 1400, GiftCue::Pulse},
-                           {F04, 950}, {F00, 850}};
+            story += Story{{F04, 2400, GiftCue::Pulse},
+                           {F17, 1250}, {F00, 1100}};
             break;
         case GiftKind::BurstSad:
-            story += Story{{ReturnCenter, 1000, GiftCue::Charge},
-                           {F05, 1050, GiftCue::Burst},
-                           {SadComic, 450},
-                           {SadComic, 660, GiftCue::TearLeft},
-                           {SadComic, 660, GiftCue::TearRight},
-                           {SadComic, 660, GiftCue::TearLeft},
-                           {SadAngry, 650}, {F00, 850}};
+            story += Story{{ReturnCenter, 1550, GiftCue::Charge},
+                           {F05, 1600, GiftCue::Burst},
+                           // No sudden eye-opening between tears and idle:
+                           // hold sorrow, relax to a soft frown, close sleepy
+                           // eyes, then settle back into ordinary breathing.
+                           {SadComic, 1750},
+                           {SadComic, 1200, GiftCue::TearLeft},
+                           {SadComic, 1200, GiftCue::TearRight},
+                           {SadComic, 1200, GiftCue::TearLeft},
+                           {SadComic, 1800},
+                           {SadSoft, 1700}, {F13, 1100}, {F00, 1250}};
             break;
         case GiftKind::BurstCry:
-            story += Story{{ReturnCenter, 1100, GiftCue::Charge},
-                           {F05, 1200, GiftCue::Burst},
-                           {SadCry, 460},
-                           {SadCry, 620, GiftCue::TearLeft},
-                           {SadCry, 620, GiftCue::TearRight},
-                           {SadCry, 620, GiftCue::TearLeft},
-                           {SadCry, 620, GiftCue::TearRight},
-                           {SadAngry, 750}, {F00, 900}};
+            story += Story{{ReturnCenter, 1600, GiftCue::Charge},
+                           {F05, 1750, GiftCue::Burst},
+                           {SadCry, 1900},
+                           {SadCry, 1250, GiftCue::TearLeft},
+                           {SadCry, 1250, GiftCue::TearRight},
+                           {SadCry, 1250, GiftCue::TearLeft},
+                           {SadCry, 1250, GiftCue::TearRight},
+                           {SadCry, 2000},
+                           {SadSoft, 1800}, {F13, 1200}, {F00, 1350}};
             break;
     }
     return story;
+}
+
+// A gift flight shows two deliberate, slow expressions rather than a
+// neutral face for the entire 4.4s. No extra story frames are consumed, so
+// the gift trajectory and its comet tail stay continuous.
+inline int visiblePose(int scheduled, const GiftVisual &effect) {
+    if ((effect.cue == GiftCue::FlyStraight ||
+         effect.cue == GiftCue::FlyArc) && effect.progress >= .68)
+        return F07; // follows the star, then looks wistful as it leaves
+    return scheduled;
 }
 
 // Authored multi-second activities. The 100-200ms blink is a brief
@@ -209,17 +225,57 @@ inline Story typingStory() {
 // timeline is deliberately kept at its fixed 115ms responsiveness.
 class Animator {
 public:
-    // Manual, one-shot preview for rare Fetch endings; keeps normal timers,
-    // action priorities and random selection untouched once it finishes.
-    void previewGift(GiftKind kind, qint64 nowMs) {
+    // One-shot previews do not consume the normal idle/music shuffle queues.
+    // The GUI can explicitly play every authored action, including typing,
+    // without waiting for chance or an actual MPRIS player.
+    void previewStory(Story sequence, Activity mode, qint64 nowMs) {
         if (activity_ == Activity::Music && inFeaturedMusic_)
             pendingFeatured_ = currentFeatured_;
-        giftKind_ = kind;
-        activity_ = Activity::Idle;
+        previewActive_ = true;
+        previewActivity_ = mode;
+        activity_ = mode;
         inFeaturedMusic_ = false;
         currentFeatured_ = -1;
-        previewActive_ = true;
-        begin(fetchStory(kind), nowMs);
+        begin(std::move(sequence), nowMs);
+    }
+    void previewGift(GiftKind kind, qint64 nowMs) {
+        giftKind_ = kind;
+        previewStory(fetchStory(kind), Activity::Idle, nowMs);
+    }
+    void previewIdle(IdleAction kind, qint64 nowMs) {
+        if (kind == IdleAction::Fetch) {
+            previewGift(GiftKind::StarFly, nowMs);
+        } else {
+            previewStory(idleStory(kind), Activity::Idle, nowMs);
+        }
+    }
+    void previewIdleBreathing(qint64 nowMs) {
+        previewStory({{F00, 6500}}, Activity::Idle, nowMs);
+    }
+    void previewMusic(MusicAction kind, qint64 nowMs) {
+        previewStory(musicStory(kind), Activity::Music, nowMs);
+    }
+    void previewGroove(qint64 nowMs) {
+        previewStory(musicGrooveStory(), Activity::Music, nowMs);
+    }
+    void previewTyping(qint64 nowMs) {
+        Story typing;
+        for (int repeat = 0; repeat < 5; ++repeat)
+            typing += typingStory(); // 2.3s to inspect paw motion.
+        previewStory(std::move(typing), Activity::Typing, nowMs);
+    }
+    [[nodiscard]] bool previewing(Activity mode) const {
+        return previewActive_ && activity_ == mode;
+    }
+    void stopPreview(qint64 nowMs) {
+        if (!previewActive_) return;
+        previewActive_ = false;
+        story_.clear();
+        inFeaturedMusic_ = false;
+        currentFeatured_ = -1;
+        pose_ = F00;
+        activity_ = Activity::Idle;
+        idleDue_ = nowMs + scaledDuration(2500);
     }
 
     void setAutonomousSpeed(int percent, qint64 nowMs) {
@@ -241,8 +297,8 @@ public:
         // background, but typing retains its normal highest priority.
         if (typing) previewActive_ = false;
         const Activity desired = typing ? Activity::Typing :
-                                 (playing && !previewActive_) ? Activity::Music :
-                                 Activity::Idle;
+                                 previewActive_ ? previewActivity_ :
+                                 playing ? Activity::Music : Activity::Idle;
         if (desired != activity_) {
             // A featured dance is only considered completed after its final
             // frame. Typing/pausing must not silently consume a bag action.
@@ -259,7 +315,8 @@ public:
             else pose_ = F00;
         }
 
-        if (activity_ == Activity::Idle && story_.isEmpty() && nowMs >= idleDue_) {
+        if (activity_ == Activity::Idle && !previewActive_ &&
+            story_.isEmpty() && nowMs >= idleDue_) {
             const auto action = static_cast<IdleAction>(idleCycle_.next());
             if (action == IdleAction::Fetch) {
                 giftKind_ = static_cast<GiftKind>(giftCycle_.next());
@@ -272,7 +329,11 @@ public:
         if (!story_.isEmpty() && nowMs >= nextFrame_) {
             ++frameIndex_;
             if (frameIndex_ >= story_.size()) {
-                if (activity_ == Activity::Music) {
+                if (previewActive_) {
+                    // Finish the selected test cleanly. Never switch straight
+                    // into another dance or repeat typing ad infinitum.
+                    stopPreview(nowMs);
+                } else if (activity_ == Activity::Music) {
                     if (inFeaturedMusic_) {
                         inFeaturedMusic_ = false;
                         currentFeatured_ = -1;
@@ -364,6 +425,7 @@ private:
     int speed_ = kDefaultAutonomousSpeed;
     bool inFeaturedMusic_ = false;
     bool previewActive_ = false;
+    Activity previewActivity_ = Activity::Idle;
     int currentFeatured_ = -1;
     int pendingFeatured_ = -1;
     ShuffleBag musicCycle_{kMusicActionCount};

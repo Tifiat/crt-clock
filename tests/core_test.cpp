@@ -49,8 +49,8 @@ int main() {
         require(p.headDx >= -3 && p.headDx <= 3, "head moves too far");
         require(p.headDy >= -5 && p.headDy <= 5, "head moves too far");
         if (id >= pet::ReturnPeek && id <= pet::ReturnApproach)
-            require(p.bodyDx >= 70 && p.bodyDx <= 240,
-                    "front-facing side entrance must approach from right");
+            require(p.bodyDx <= -55 && p.bodyDx >= -200,
+                    "front-facing side entrance must come from left");
         else
             require(p.bodyDx >= -9 && p.bodyDx <= 9, "body moves too far");
         require(p.bodyDy >= -6 && p.bodyDy <= 6, "body moves too far");
@@ -122,6 +122,16 @@ int main() {
             "gift-specific pose IDs must append after existing set");
     require(pet::frame(pet::AwayGone).hidden,
             "pet must fully disappear between departure and side return");
+    require(pet::frame(pet::ReturnPeek).bodyDx <
+            pet::frame(pet::ReturnSide).bodyDx &&
+            pet::frame(pet::ReturnSide).bodyDx <
+            pet::frame(pet::ReturnApproach).bodyDx &&
+            pet::frame(pet::ReturnApproach).bodyDx <
+            pet::frame(pet::ReturnCenter).bodyDx,
+            "return must move left-to-right, never backwards");
+    require(pet::frame(pet::ReturnPeek).line ==
+            QStringLiteral("(づ｡◔‿‿◔｡)っ"),
+            "return must face toward the right instead of walking backwards");
     for (int id = pet::ReturnPeek; id <= pet::ReturnCenter; ++id)
         require(!pet::frame(id).back,
                 "returning pet must face the viewer, never return backside");
@@ -194,7 +204,8 @@ int main() {
         const auto variant = static_cast<pet::GiftKind>(kind);
         const auto story = pet::fetchStory(variant);
         int vanishAt = -1, returnAt = -1, presentAt = -1;
-        int tears = 0, bursts = 0, softSad = 0, angry = 0;
+        int tears = 0, bursts = 0, softSad = 0, calm = 0;
+        int lastTearIndex = -1, lastTearAtMs = 0, elapsedMs = 0;
         pet::GiftCue lastTear{}; // Xlib defines None as a macro
         for (int i = 0; i < story.size(); ++i) {
             const auto &step = story[i];
@@ -203,14 +214,19 @@ int main() {
             if (step.cue == pet::GiftCue::Present) presentAt = i;
             if (step.cue == pet::GiftCue::Burst) ++bursts;
             if (step.pose == pet::SadSoft) ++softSad;
-            if (step.pose == pet::SadAngry) ++angry;
+            if (step.pose == pet::F13) ++calm;
             if (step.cue == pet::GiftCue::TearLeft ||
                 step.cue == pet::GiftCue::TearRight) {
                 require(lastTear != step.cue,
                         "tears must alternate between left and right");
                 lastTear = step.cue;
                 ++tears;
+                lastTearIndex = i;
+                lastTearAtMs = elapsedMs;
+                require(step.durationMs >= 1000,
+                        "tears must be slow enough to read visually");
             }
+            elapsedMs += step.durationMs;
             if (returnAt >= 0 && i >= returnAt)
                 require(!pet::frame(step.pose).back,
                         "all post-return poses must face forward");
@@ -218,9 +234,23 @@ int main() {
         require(vanishAt >= 0 && vanishAt < returnAt &&
                 returnAt < presentAt && story.back().pose == pet::F00,
                 "gift story timeline/neutral exit invalid");
-        if (pet::isBurst(variant))
-            require(bursts == 1 && tears >= 3 && angry >= 1,
-                    "burst must cause visible blast, alternating tears and recovery");
+        require(story[vanishAt].durationMs >= 3000,
+                "pet must stay gone visibly before returning");
+        require(story[returnAt].pose == pet::ReturnPeek &&
+                !pet::frame(story[returnAt].pose).back,
+                "return must show the original front-facing pet");
+        if (pet::isBurst(variant)) {
+            require(bursts == 1 && tears >= 3 && calm >= 1,
+                    "burst must cause blast, slow tears and closed-eye recovery");
+            require(lastTearIndex >= 0 &&
+                    story[lastTearIndex+1].pose == story[lastTearIndex].pose,
+                    "pet should keep crying after its final falling tear");
+            require(story[lastTearIndex+1].durationMs >= 1500,
+                    "hold sad face after final tear, do not pop eyes open");
+            require(story[lastTearIndex+2].pose == pet::SadSoft &&
+                    story[lastTearIndex+3].pose == pet::F13,
+                    "soft sad eyes and sleepy eyes must bridge crying back to idle");
+        }
         else if (variant != pet::GiftKind::Pulse)
             require(softSad > 0, "flying gift should get mild sad reaction");
         else require(bursts == 0 && tears == 0,
@@ -423,6 +453,73 @@ int main() {
     require(resumedAction == interruptedAction,
             "interrupted featured action must be replayed before advancing bag");
 
+    // The UI should be able to preview every registered animation WITHOUT
+    // modifying the random shuffle queue or needing external MPRIS playback.
+    for (int action = 0; action < pet::kIdleActionCount; ++action) {
+        pet::Animator one;
+        one.previewIdle(static_cast<pet::IdleAction>(action), 0);
+        require(one.previewing(pet::Activity::Idle),
+                "idle action preview must start immediately");
+        const auto story = pet::idleStory(static_cast<pet::IdleAction>(action));
+        const int finishAt = pet::duration(story);
+        for (int t = 40; t <= finishAt + 1600; t += 40)
+            one.advance(t, false, false);
+        require(!one.previewing(pet::Activity::Idle) && one.pose() == pet::F00,
+                "idle preview should end once and return to resting pose");
+    }
+    for (int action = 0; action < pet::kMusicActionCount; ++action) {
+        pet::Animator one;
+        one.previewMusic(static_cast<pet::MusicAction>(action), 0);
+        require(one.previewing(pet::Activity::Music),
+                "music preview must be available without playing audio");
+        const int finishAt = pet::duration(
+            pet::musicStory(static_cast<pet::MusicAction>(action)));
+        for (int t = 40; t <= finishAt + 1100; t += 40)
+            one.advance(t, false, false);
+        require(!one.previewing(pet::Activity::Music) && one.pose() == pet::F00,
+                "music preview must stop after one featured dance");
+    }
+    pet::Animator groovePreview;
+    groovePreview.previewGroove(0);
+    for (int t = 40; t <= 2500; t += 40)
+        groovePreview.advance(t, false, false);
+    require(!groovePreview.previewing(pet::Activity::Music),
+            "groove preview should not loop forever");
+
+    pet::Animator typingPreview;
+    typingPreview.previewTyping(0);
+    require(typingPreview.previewing(pet::Activity::Typing),
+            "typing preview should run without real key presses");
+    for (int t = 40; t <= 2500; t += 40)
+        typingPreview.advance(t, false, false);
+    require(!typingPreview.previewing(pet::Activity::Typing),
+            "typing preview must stop, not repeat endlessly");
+
+    pet::Animator breathingPreview;
+    breathingPreview.previewIdleBreathing(0);
+    require(breathingPreview.idleBreathing(),
+            "quiet breathing should be explicitly previewable");
+    breathingPreview.stopPreview(100);
+    require(!breathingPreview.previewing(pet::Activity::Idle) &&
+            breathingPreview.pose() == pet::F00,
+            "Stop Preview must instantly restore resting pose");
+
+    // Flying gifts keep a readable expression for most of their duration,
+    // then change once without restarting the flight or fading its trail.
+    const pet::GiftVisual earlier{pet::GiftCue::FlyArc,
+                                  pet::GiftKind::ArcFly, .4};
+    const pet::GiftVisual later{pet::GiftCue::FlyArc,
+                                pet::GiftKind::ArcFly, .8};
+    require(pet::visiblePose(pet::F02, earlier) == pet::F02 &&
+            pet::visiblePose(pet::F02, later) == pet::F07,
+            "flying gift should have two held emotional states");
+    const QPointF pStart = pet::giftFlight(0.0, false);
+    const QPointF pMid = pet::giftFlight(.5, false);
+    const QPointF pEnd = pet::giftFlight(1.0, false);
+    require(pStart.x() < pMid.x() && pMid.x() < pEnd.x() &&
+            pMid.x() < 470 && pEnd.x() > 480,
+            "gift must be visible on-screen for most of its slow flight");
+
     // Manual preview runs even when MPRIS is playing, so all five rare
     // gift endings can be inspected without waiting for the idle shuffle.
     // It must not turn into a permanent override after the story finishes.
@@ -431,7 +528,7 @@ int main() {
     bool demoGone = false, demoReturn = false, demoBurst = false;
     bool demoLeftTear = false, demoRightTear = false;
     bool musicRestored = false;
-    for (int t = 0; t <= 21000; t += 40) {
+    for (int t = 0; t <= 34000; t += 40) {
         giftDemo.advance(t, false, true);
         if (giftDemo.pose() == pet::AwayGone) demoGone = true;
         if (giftDemo.pose() == pet::ReturnPeek) demoReturn = true;

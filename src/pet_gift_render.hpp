@@ -19,8 +19,10 @@ inline QColor giftTint(QColor color, double alpha) {
 }
 
 inline QPointF giftFlight(double t, bool arc) {
-    const qreal x = 392.0 + 165.0 * t;
-    const qreal y = 247.0 - 165.0 * t - (arc ? 34.0 * std::sin(std::numbers::pi * t) : 0.0);
+    // Four-second on-screen flight instead of leaving the 480px canvas
+    // halfway through a 1.5s scene.
+    const qreal x = 350.0 + 140.0 * t;
+    const qreal y = 247.0 - 155.0 * t - (arc ? 29.0 * std::sin(std::numbers::pi * t) : 0.0);
     return {x, y};
 }
 
@@ -74,7 +76,7 @@ inline void giftDrop(QPainter &p, qreal x, qreal y, qreal size, QColor color) {
 inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosphor) {
     if (!visual.active()) return;
     const double t = std::clamp(visual.progress, 0.0, 1.0);
-    const QPointF origin(392, 247);
+    const QPointF origin(350, 247);
     const QColor bright("#d8ffe1");
     QColor color = phosphor;
     p.save();
@@ -93,18 +95,27 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
         case GiftCue::FlyArc: {
             const bool arc = visual.cue == GiftCue::FlyArc;
             const QPointF point = giftFlight(t, arc);
-            // Three delicate disappearing trails follow the gift, never
-            // appearing in the unrelated idle breathing animation.
-            for (int i = 1; i <= 6; ++i) {
-                const double prevT = std::max(0.0, t - i * .028);
+            // Readable comet tail: twelve staggered dashes and tiny sparks,
+            // each sampled at a *previous* position on the actual trajectory.
+            // Contrast is stronger than v0.6.0, without idle background noise.
+            for (int i = 1; i <= 12; ++i) {
+                const double prevT = t - i * .031;
+                if (prevT < 0.0) continue;
                 const QPointF old = giftFlight(prevT, arc);
-                const double alpha = .22 * (1.0 - t) * (1.0 - i / 7.0);
+                const double alpha = .68 * (1.0 - i / 13.0)
+                                     * (0.82 + .18 * (1.0 - t));
                 const QColor trail = giftTint(color, alpha);
-                p.setPen(QPen(trail, i % 2 ? 1.7 : 1.0, Qt::SolidLine, Qt::RoundCap));
-                const qreal sway = i % 2 ? -1.5 : 1.5;
-                p.drawLine(old + QPointF(-6, sway), old + QPointF(0, sway));
+                p.setPen(QPen(trail, i % 3 ? 2.0 : 1.4,
+                              Qt::SolidLine, Qt::RoundCap));
+                const qreal sway = i % 2 ? -2.5 : 2.5;
+                p.drawLine(old + QPointF(-9, sway), old + QPointF(-1, sway));
+                if (i % 3 == 0) {
+                    p.setPen(Qt::NoPen);
+                    p.setBrush(giftTint(color, alpha * .55));
+                    p.drawEllipse(old + QPointF(-2, sway - 5), 1.7, 1.7);
+                }
             }
-            giftStar(p, point, 10.0 + 2.0 * std::sin(std::numbers::pi * t), color);
+            giftStar(p, point, 11.0 + 1.8 * std::sin(std::numbers::pi * t), color);
             break;
         }
         case GiftCue::Pulse: {
@@ -175,7 +186,7 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
         }
         case GiftCue::TearLeft:
         case GiftCue::TearRight: {
-            const qreal x = visual.cue == GiftCue::TearLeft ? 192.0 : 287.0;
+            const qreal x = visual.cue == GiftCue::TearLeft ? 142.0 : 237.0;
             // Every cue is a separate 600ms tear, alternating eyes. The
             // single tear starts by the eye and falls below the face.
             const qreal y = 251.0 + 33.0 * t*t;
