@@ -393,6 +393,16 @@ int main() {
         if (step.pose == pet::B02) wagRight = true;
     }
     require(wagLeft && wagRight, "the old tail movement must be restored");
+    require(pet::musicStory(pet::MusicAction::HeadNod).size() >= 22,
+            "nodding should last a few more seconds at fast tempo");
+    const auto swaying = pet::musicStory(pet::MusicAction::Sway);
+    bool streakRight = false, streakLeft = false;
+    for (const auto &frame : swaying) {
+        streakRight |= frame.streak == -1;
+        streakLeft |= frame.streak == 1;
+    }
+    require(streakRight && streakLeft,
+            "directional music marks must alternate with side movement");
     require(pet::duration(pet::typingStory()) < 600, "typing must feel responsive");
     for (const auto &step : pet::typingStory())
         require(step.durationMs == 115, "typing timeline must remain unscaled");
