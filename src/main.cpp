@@ -96,6 +96,7 @@ struct Settings {
     int brightness = 84;
     bool musicResponse = true;
     bool typingResponse = true;
+    int petAnimationSpeed = pet::kDefaultAutonomousSpeed;
     int flickerFrequency = crt::kDefaultFlickerFrequency;
     int pixelScale = 2;
 
@@ -146,6 +147,9 @@ struct Settings {
         brightness = std::clamp(s.value("appearance/brightness", brightness).toInt(), 25, 100);
         musicResponse = s.value("pet/music_response", musicResponse).toBool();
         typingResponse = s.value("pet/typing_response", typingResponse).toBool();
+        petAnimationSpeed = std::clamp(
+            s.value("pet/autonomous_speed", petAnimationSpeed).toInt(),
+            pet::kMinAutonomousSpeed, pet::kMaxAutonomousSpeed);
         // Read the old checkbox value on first migration, then use the new slider.
         const int legacyFrequency = s.value("appearance/clock_flicker", true).toBool()
                                     ? crt::kDefaultFlickerFrequency : 0;
@@ -186,6 +190,7 @@ struct Settings {
         s.setValue("appearance/brightness", brightness);
         s.setValue("pet/music_response", musicResponse);
         s.setValue("pet/typing_response", typingResponse);
+        s.setValue("pet/autonomous_speed", petAnimationSpeed);
         s.setValue("appearance/flicker_frequency", flickerFrequency);
         s.setValue("appearance/clock_flicker", flickerFrequency > 0); // downgrade compatibility
         s.setValue("appearance/pixel_scale", pixelScale);
@@ -267,6 +272,7 @@ public:
         setAttribute(Qt::WA_ShowWithoutActivating);
         setMouseTracking(true);
         elapsed_.start();
+        animator_.setAutonomousSpeed(cfg_.petAnimationSpeed, 0);
         keyboard_ = std::make_unique<KeyboardActivity>([this] { edit(); });
         scheduleNextFlicker(0);
         rippleDue_ = QRandomGenerator::global()->bounded(6500, 12000);
@@ -296,7 +302,7 @@ public:
         bool dirty = animator_.advance(now, typing, cfg_.musicResponse && musicPlaying_);
         const bool joyful = cfg_.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ") &&
                            pet::hasJoyfulEyes(pet::frame(animator_.pose()));
-        dirty = joyTail_.advance(now, joyful) || dirty;
+        dirty = joyTail_.advance(now, joyful, cfg_.petAnimationSpeed) || dirty;
         const quint64 count = keyboard_->pressCount();
         if (count > keyPressCount_) {
             // Each detected press creates one decorative glyph, not the typed
@@ -437,6 +443,14 @@ public:
             redraw();
         });
 
+        addSlider("Pet autonomous animation speed (%) — idle and music only",
+                  cfg_.petAnimationSpeed,
+                  pet::kMinAutonomousSpeed, pet::kMaxAutonomousSpeed,
+                  [this](Settings &s, int percent) {
+                      s.petAnimationSpeed = percent;
+                      animator_.setAutonomousSpeed(percent, elapsed_.elapsed());
+                  });
+
         auto *border = new QCheckBox("Show border", dialog);
         border->setChecked(cfg_.frame);
         form->addRow(border);
@@ -519,6 +533,7 @@ public:
         });
         connect(buttons, &QDialogButtonBox::rejected, dialog, [this, dialog, before] {
             cfg_ = before;
+            animator_.setAutonomousSpeed(cfg_.petAnimationSpeed, elapsed_.elapsed());
             redraw();
             dialog->reject();
         });

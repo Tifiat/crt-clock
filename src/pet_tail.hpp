@@ -2,6 +2,7 @@
 
 #include "pet_poses.hpp"
 #include <QtGlobal>
+#include <algorithm>
 
 // Tail wags whenever the face uses the joyful > < eyes, independent of which
 // idle/music script happens to show that face. Wait two GUI animation ticks,
@@ -16,7 +17,9 @@ inline bool hasJoyfulEyes(const Pose &pose) {
 class JoyTail {
 public:
     // Must be called each ~40ms animation tick, even without pose changes.
-    bool advance(qint64 nowMs, bool joyful) {
+    bool advance(qint64 nowMs, bool joyful, int autonomousSpeed = 100) {
+        const int intervalMs = std::clamp((16000 + autonomousSpeed / 2) /
+                                           std::clamp(autonomousSpeed, 50, 180), 40, 320);
         const bool beforeVisible = visible_;
         const int beforeSide = side_;
         if (!joyful) {
@@ -28,11 +31,11 @@ public:
             if (framesSeen_ < 3) ++framesSeen_;
             if (framesSeen_ == 3 && !visible_) {
                 visible_ = true;
-                nextWagMs_ = nowMs + 160;
+                nextWagMs_ = nowMs + intervalMs;
             }
             if (visible_ && nowMs >= nextWagMs_) {
                 side_ = -side_;
-                nextWagMs_ = nowMs + 160;
+                nextWagMs_ = nowMs + intervalMs;
             }
         }
         return beforeVisible != visible_ || (visible_ && beforeSide != side_);
