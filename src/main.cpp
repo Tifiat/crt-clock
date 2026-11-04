@@ -772,31 +772,13 @@ private:
         update();
     }
     void applyMode() {
-        // Qt::setWindowFlags() previously hid/reparented this window on
-        // EVERY Enter/Escape, causing XFWM4 to lose the all-desktops state.
-        // This mode switch changes geometry, stacking and focus only.
-        const bool firstMap = !isVisible();
-        setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
-        setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
-        setGeometry(editing_ ? screen_ : bounds(cfg_));
-        if (firstMap) {
-            desktop::keepOnEveryWorkspace(winId());
-            show();
-        }
-        requestWindowMode();
-        // WM can process focus/stacking later. Same XID is used in every
-        // callback; no hide/show and no setWindowFlags after construction.
+        // No Qt flag changes or remapping: one XID survives Enter and Esc.
+        desktop::applyWindowMode(*this, editing_,
+                                 editing_ ? screen_ : bounds(cfg_));
         for (int delayMs : {0, 250, 900}) {
             QTimer::singleShot(delayMs, this, [this] {
                 if (isVisible()) requestWindowMode();
             });
-        }
-        if (editing_) {
-            raise();
-            activateWindow();
-            setFocus(Qt::OtherFocusReason);
-        } else {
-            lower();
         }
     }
 
