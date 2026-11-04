@@ -57,6 +57,7 @@ struct Pose {
 // mirror applies only to the actual walk-back sequence in Idle::Patrol.
 struct MotionVisual {
     double offsetX = 0.0;
+    double offsetY = 0.0;
     bool mirror = false;
     int streak = 0; // -1: travelling left, +1: travelling right
 };
@@ -163,15 +164,13 @@ inline Pose frame(int id) {
             // Returns LEFT -> RIGHT, facing in the direction of travel.
             // Right-hand entry made him look like he was walking backwards.
             p.line = QStringLiteral("(づ｡◔‿‿◔｡)っ");
-            p.bodyDx = -200;
+            // Move-from/Move-to lives in Animator's continuous frames.
             break;
         case ReturnSide:
             p.line = QStringLiteral("(づ｡◔‿‿◔｡)っ");
-            p.bodyDx = -125;
             break;
         case ReturnApproach:
             p.line = QStringLiteral("(づ｡◔‿‿◔｡)っ");
-            p.bodyDx = -55;
             break;
         case ReturnCenter:
             p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");
