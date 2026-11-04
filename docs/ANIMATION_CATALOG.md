@@ -93,7 +93,7 @@ B02  ᕦ(    ●  )ᕤ
 | I11 | Celebrate | 4.85 с | F00 → F04 (1,65 с) → F16 → F04 → F00 |
 | I12 | Indignant | 3.70 с | F00 → F12 → F05 → F12 → F00 |
 | I13 | Patrol | 5.30 с | F00 → IdleStepLeft → F02 → IdleStepRight → F00 → IdleStepLeft → IdleStepRight → F00 |
-| I14 | Fetch | 8,5–13 с, по варианту | F00 → IdleStepLeft → AwayFace → AwayNear → AwayFar → AwayTiny → **AwayGone (1,25 с)** → ReturnPeek → ReturnSide → ReturnApproach → ReturnCenter → GiftCue::Present → один из пяти финалов → F00 |
+| I14 | Fetch | 10,5–14,2 с, по варианту | F00 → IdleStepLeft → AwayFace → AwayNear → AwayFar → AwayTiny → **AwayGone (1,25 с)** → ReturnPeek → ReturnSide → ReturnApproach → ReturnCenter → GiftCue::Present → один из пяти финалов → F00 |
 
 Между завершёнными idle-сценариями пауза от 6,5 до 14,5 секунды. Все 14 уникальных действий выпадают по одному разу за цикл ShuffleBag, поэтому длинный Fetch появляется редко.
 
