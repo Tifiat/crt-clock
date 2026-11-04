@@ -453,6 +453,73 @@ int main() {
     require(resumedAction == interruptedAction,
             "interrupted featured action must be replayed before advancing bag");
 
+    // The UI should be able to preview every registered animation WITHOUT
+    // modifying the random shuffle queue or needing external MPRIS playback.
+    for (int action = 0; action < pet::kIdleActionCount; ++action) {
+        pet::Animator one;
+        one.previewIdle(static_cast<pet::IdleAction>(action), 0);
+        require(one.previewing(pet::Activity::Idle),
+                "idle action preview must start immediately");
+        const auto story = pet::idleStory(static_cast<pet::IdleAction>(action));
+        const int finishAt = pet::duration(story);
+        for (int t = 40; t <= finishAt + 240; t += 40)
+            one.advance(t, false, false);
+        require(!one.previewing(pet::Activity::Idle) && one.pose() == pet::F00,
+                "idle preview should end once and return to resting pose");
+    }
+    for (int action = 0; action < pet::kMusicActionCount; ++action) {
+        pet::Animator one;
+        one.previewMusic(static_cast<pet::MusicAction>(action), 0);
+        require(one.previewing(pet::Activity::Music),
+                "music preview must be available without playing audio");
+        const int finishAt = pet::duration(
+            pet::musicStory(static_cast<pet::MusicAction>(action)));
+        for (int t = 40; t <= finishAt + 200; t += 40)
+            one.advance(t, false, false);
+        require(!one.previewing(pet::Activity::Music) && one.pose() == pet::F00,
+                "music preview must stop after one featured dance");
+    }
+    pet::Animator groovePreview;
+    groovePreview.previewGroove(0);
+    for (int t = 40; t <= 2500; t += 40)
+        groovePreview.advance(t, false, false);
+    require(!groovePreview.previewing(pet::Activity::Music),
+            "groove preview should not loop forever");
+
+    pet::Animator typingPreview;
+    typingPreview.previewTyping(0);
+    require(typingPreview.previewing(pet::Activity::Typing),
+            "typing preview should run without real key presses");
+    for (int t = 40; t <= 2500; t += 40)
+        typingPreview.advance(t, false, false);
+    require(!typingPreview.previewing(pet::Activity::Typing),
+            "typing preview must stop, not repeat endlessly");
+
+    pet::Animator breathingPreview;
+    breathingPreview.previewIdleBreathing(0);
+    require(breathingPreview.idleBreathing(),
+            "quiet breathing should be explicitly previewable");
+    breathingPreview.stopPreview(100);
+    require(!breathingPreview.previewing(pet::Activity::Idle) &&
+            breathingPreview.pose() == pet::F00,
+            "Stop Preview must instantly restore resting pose");
+
+    // Flying gifts keep a readable expression for most of their duration,
+    // then change once without restarting the flight or fading its trail.
+    const pet::GiftVisual earlier{pet::GiftCue::FlyArc,
+                                  pet::GiftKind::ArcFly, .4};
+    const pet::GiftVisual later{pet::GiftCue::FlyArc,
+                                pet::GiftKind::ArcFly, .8};
+    require(pet::visiblePose(pet::F02, earlier) == pet::F02 &&
+            pet::visiblePose(pet::F02, later) == pet::F07,
+            "flying gift should have two held emotional states");
+    const QPointF pStart = pet::giftFlight(0.0, false);
+    const QPointF pMid = pet::giftFlight(.5, false);
+    const QPointF pEnd = pet::giftFlight(1.0, false);
+    require(pStart.x() < pMid.x() && pMid.x() < pEnd.x() &&
+            pMid.x() < 470 && pEnd.x() > 480,
+            "gift must be visible on-screen for most of its slow flight");
+
     // Manual preview runs even when MPRIS is playing, so all five rare
     // gift endings can be inspected without waiting for the idle shuffle.
     // It must not turn into a permanent override after the story finishes.
