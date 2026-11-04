@@ -46,44 +46,50 @@ inline int duration(const Story &story) {
 // RIGHT uses regular front-facing glyphs at full size, not the rear silhouette.
 inline Story fetchStory(GiftKind kind) {
     Story story = {
-        {F00, 650}, {IdleStepLeft, 500}, {AwayFace, 650},
-        {AwayNear, 620}, {AwayFar, 580}, {AwayTiny, 470},
-        {AwayGone, 1250}, // the pet is gone; keep clocks unaffected
-        {ReturnPeek, 440}, {ReturnSide, 440},
-        {ReturnApproach, 470}, {ReturnCenter, 560},
-        {ReturnCenter, 680, GiftCue::Present}
+        {F00, 750}, {IdleStepLeft, 650}, {AwayFace, 730},
+        {AwayNear, 680}, {AwayFar, 650}, {AwayTiny, 600},
+        // The gap is a deliberate pause, not a nearly instant reversal.
+        {AwayGone, 3300},
+        {ReturnPeek, 700}, {ReturnSide, 700},
+        {ReturnApproach, 750}, {ReturnCenter, 650},
+        {ReturnCenter, 1100, GiftCue::Present}
     };
     switch (kind) {
         case GiftKind::StarFly:
-            story += Story{{ReturnCenter, 1500, GiftCue::FlyStraight},
-                           {SadSoft, 950}, {F00, 850}};
+            story += Story{{F02, 4400, GiftCue::FlyStraight},
+                           {SadSoft, 1900}, {F13, 950}, {F00, 1050}};
             break;
         case GiftKind::ArcFly:
-            story += Story{{ReturnCenter, 1560, GiftCue::FlyArc},
-                           {SadSoft, 1150}, {F00, 850}};
+            story += Story{{F02, 4600, GiftCue::FlyArc},
+                           {SadSoft, 2150}, {F13, 1050}, {F00, 1100}};
             break;
         case GiftKind::Pulse:
-            story += Story{{ReturnCenter, 1400, GiftCue::Pulse},
-                           {F04, 950}, {F00, 850}};
+            story += Story{{F04, 2400, GiftCue::Pulse},
+                           {F17, 1250}, {F00, 1100}};
             break;
         case GiftKind::BurstSad:
-            story += Story{{ReturnCenter, 1000, GiftCue::Charge},
-                           {F05, 1050, GiftCue::Burst},
-                           {SadComic, 450},
-                           {SadComic, 660, GiftCue::TearLeft},
-                           {SadComic, 660, GiftCue::TearRight},
-                           {SadComic, 660, GiftCue::TearLeft},
-                           {SadAngry, 650}, {F00, 850}};
+            story += Story{{ReturnCenter, 1550, GiftCue::Charge},
+                           {F05, 1600, GiftCue::Burst},
+                           // No sudden eye-opening between tears and idle:
+                           // hold sorrow, relax to a soft frown, close sleepy
+                           // eyes, then settle back into ordinary breathing.
+                           {SadComic, 1750},
+                           {SadComic, 1200, GiftCue::TearLeft},
+                           {SadComic, 1200, GiftCue::TearRight},
+                           {SadComic, 1200, GiftCue::TearLeft},
+                           {SadComic, 1800},
+                           {SadSoft, 1700}, {F13, 1100}, {F00, 1250}};
             break;
         case GiftKind::BurstCry:
-            story += Story{{ReturnCenter, 1100, GiftCue::Charge},
-                           {F05, 1200, GiftCue::Burst},
-                           {SadCry, 460},
-                           {SadCry, 620, GiftCue::TearLeft},
-                           {SadCry, 620, GiftCue::TearRight},
-                           {SadCry, 620, GiftCue::TearLeft},
-                           {SadCry, 620, GiftCue::TearRight},
-                           {SadAngry, 750}, {F00, 900}};
+            story += Story{{ReturnCenter, 1600, GiftCue::Charge},
+                           {F05, 1750, GiftCue::Burst},
+                           {SadCry, 1900},
+                           {SadCry, 1250, GiftCue::TearLeft},
+                           {SadCry, 1250, GiftCue::TearRight},
+                           {SadCry, 1250, GiftCue::TearLeft},
+                           {SadCry, 1250, GiftCue::TearRight},
+                           {SadCry, 2000},
+                           {SadSoft, 1800}, {F13, 1200}, {F00, 1350}};
             break;
     }
     return story;
