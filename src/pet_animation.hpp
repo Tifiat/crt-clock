@@ -32,7 +32,34 @@ struct Frame {
     int pose;
     int durationMs;
     GiftCue cue = GiftCue::Inactive;
+    int moveFrom = 0;
+    int moveTo = 0;
+    bool mirror = false;
+    int streak = 0;
+    bool absoluteDuration = false; // hold/read emotion; speed affects gestures
 };
+
+// Eyegaze and sleep need a readable minimum independent of fast limb tempo.
+// Preserves the existing 50..180% slider for active motion.
+inline Frame hold(int pose, int ms, GiftCue cue = GiftCue::Inactive) {
+    Frame frame{pose, ms, cue};
+    frame.absoluteDuration = true;
+    return frame;
+}
+
+inline Frame walk(int pose, int ms, int from, int to, bool mirror = false) {
+    Frame frame{pose, ms};
+    frame.moveFrom = from;
+    frame.moveTo = to;
+    frame.mirror = mirror;
+    return frame;
+}
+
+inline Frame gesture(int pose, int ms, int from, int to, int streak = 0) {
+    Frame frame = walk(pose, ms, from, to);
+    frame.streak = streak;
+    return frame;
+}
 using Story = QVector<Frame>;
 
 inline int duration(const Story &story) {
@@ -112,38 +139,75 @@ inline Story idleStory(IdleAction action) {
         case IdleAction::Blink:
             return {{F00, 600},{F01, 230},{F00, 700},{F01, 230},{F00, 900}};
         case IdleAction::Peek:
-            return {{F00, 450},{F02, 650},{F00, 550},
-                    {F02, 700},{F00, 1400}};
+            return {{F00, 550}, hold(F02, 1550), {F00, 550},
+                    hold(F02, 1600), {F00, 1000}};
         case IdleAction::Smile:
-            return {{F00, 450},{F17, 850},{F04, 850},{F17, 850},{F00, 1000}};
+            return {{F00, 500},hold(F17, 1100),hold(F04, 1000),
+                    hold(F17, 1100),{F00, 1100}};
         case IdleAction::Surprise:
-            return {{F00, 500},{F05, 900},{F15, 750},{F01, 170},{F00, 1100}};
+            return {{F00, 550},hold(F05, 1750),hold(F15, 1150),
+                    {F01, 240},{F00, 1100}};
         case IdleAction::Smug:
-            return {{F00, 550},{F06, 950},{F09, 450},{F06, 1050},{F00, 1000}};
+            return {{F00, 550},hold(F06, 1750),hold(F09, 800),
+                    hold(F06, 1600),{F00, 1050}};
         case IdleAction::Shy:
-            return {{F00, 450},{F08, 750},{F07, 850},{F08, 700},{F00, 850}};
+            return {{F00, 650},hold(F08, 1850),hold(F07, 850),
+                    hold(F08, 1750),{F00, 1200}};
         case IdleAction::Sleepy:
-            return {{F00, 800},{F13, 1150},{F01, 190},{F13, 1450},{F00, 1400}};
+            return {{F00, 950},hold(F13, 3400),{F01, 260},
+                    hold(F13, 3200),{F00, 1400}};
         case IdleAction::Confused:
-            return {{F00, 550},{F11, 800},{F02, 700},{F11, 700},{F00, 900}};
+            return {{F00, 550},hold(F11, 1400),hold(F02, 1100),
+                    hold(F11, 1300),{F00, 1100}};
         case IdleAction::Greeting:
-            return {{H00, 450},{H01, 500},{H00, 500},{H01, 500},{H00, 1050}};
+            // More complete waves and slight whole-body sway while waving.
+            return {{H00, 650},
+                    gesture(H01, 550, 0, -5),
+                    gesture(H00, 550, -5, 4),
+                    gesture(H01, 550, 4, -5),
+                    gesture(H00, 550, -5, 4),
+                    gesture(H01, 550, 4, -5),
+                    gesture(H00, 550, -5, 4),
+                    gesture(H01, 550, 4, 0), {H00, 1100}};
         case IdleAction::Fidget:
-            return {{H00, 500},{H02, 650},{H01, 650},
-                    {H02, 650},{H00, 1050}};
+            return {{H00, 600},
+                    gesture(H02, 540, 0, -6),
+                    gesture(H01, 540, -6, 6),
+                    gesture(H02, 540, 6, -6),
+                    gesture(H01, 540, -6, 6),
+                    gesture(H02, 540, 6, -6),
+                    gesture(H01, 540, -6, 6),
+                    gesture(H02, 540, 6, -6),
+                    gesture(H01, 540, -6, 0),
+                    {H00, 1050}};
         case IdleAction::Celebrate:
-            // Hold the happy face longer. JoyTail independently wags for
-            // as long as any story displays the joyful > < eyes.
-            return {{F00, 600},{F04, 1650},{F16, 750},{F04, 850},{F00, 1000}};
+            return {{F00, 650},hold(F04, 1800),{F16, 950},
+                    hold(F04, 1500),{F16, 750},hold(F04, 1200),
+                    {F00, 1150}};
         case IdleAction::Indignant:
-            return {{F00, 500},{F12, 850},{F05, 650},{F12, 700},{F00, 1000}};
+            return {{F00, 650},hold(F12, 1600),{F05, 700},
+                    hold(F12, 1550),{F00, 1200}};
         case IdleAction::Patrol:
-            // Casual side steps, then back to the same resting spot.
-            return {{F00, 700}, {IdleStepLeft, 600}, {F02, 650},
-                    {IdleStepRight, 600}, {F00, 600},
-                    {IdleStepLeft, 600}, {IdleStepRight, 600}, {F00, 950}};
+            // Whole 480px canvas traversal: actor progresses to the right
+            // edge, mirrors at the turn, walks to the left, and finally
+            // returns to its original idle anchor. Glyph grid never resizes.
+            return {{F00, 650},
+                    walk(IdleStepRight, 430, 0, 50),
+                    walk(IdleStepLeft, 430, 50, 105),
+                    walk(IdleStepRight, 430, 105, 160),
+                    hold(IdleStepRight, 380),
+                    walk(IdleStepLeft, 430, 160, 105, true),
+                    walk(IdleStepRight, 430, 105, 50, true),
+                    walk(IdleStepLeft, 430, 50, -5, true),
+                    walk(IdleStepRight, 430, -5, -60, true),
+                    walk(IdleStepLeft, 430, -60, -125, true),
+                    hold(IdleStepLeft, 380),
+                    walk(IdleStepRight, 450, -125, -75),
+                    walk(IdleStepLeft, 450, -75, -25),
+                    walk(IdleStepRight, 450, -25, 0),
+                    {F00, 1050}};
         case IdleAction::Fetch:
-            return fetchStory(GiftKind::StarFly); // canonical idle catalog example
+            return fetchStory(GiftKind::StarFly);
     }
     return {};
 }
@@ -282,7 +346,8 @@ public:
         const int next = std::clamp(percent, kMinAutonomousSpeed, kMaxAutonomousSpeed);
         if (next == speed_) return;
         if (activity_ != Activity::Typing) {
-            if (!story_.isEmpty() && nextFrame_ > nowMs)
+            if (!story_.isEmpty() && nextFrame_ > nowMs &&
+                !story_[frameIndex_].absoluteDuration)
                 nextFrame_ = nowMs +
                     std::max<qint64>(1, (nextFrame_ - nowMs) * speed_ / next);
             if (activity_ == Activity::Idle && idleDue_ > nowMs)
@@ -358,7 +423,7 @@ public:
             } else {
                 pose_ = story_[frameIndex_].pose;
                 frameStartMs_ = nowMs;
-                nextFrame_ = nowMs + frameDuration(story_[frameIndex_].durationMs);
+                nextFrame_ = nowMs + frameDuration(story_[frameIndex_]);
             }
         }
 
@@ -385,11 +450,21 @@ public:
             pose == IdleStepLeft || pose == IdleStepRight) return false;
         return story_[frameIndex_].cue == GiftCue::Inactive;
     }
+    [[nodiscard]] MotionVisual motionVisual(qint64 nowMs) const {
+        if (story_.isEmpty()) return {};
+        const Frame &f = story_[frameIndex_];
+        const double t = std::clamp(double(nowMs - frameStartMs_) /
+                                    frameDuration(f), 0.0, 1.0);
+        // Linear motion with a subtle eased endpoint; no jump at turns.
+        const double eased = t*t*(3.0-2.0*t);
+        return {f.moveFrom + (f.moveTo - f.moveFrom) * eased,
+                f.mirror, f.streak};
+    }
     [[nodiscard]] GiftVisual giftVisual(qint64 nowMs) const {
         if (activity_ != Activity::Idle || story_.isEmpty()) return {};
         const Frame &frame = story_[frameIndex_];
         if (frame.cue == GiftCue::Inactive) return {};
-        const int ms = frameDuration(frame.durationMs);
+        const int ms = frameDuration(frame);
         return {frame.cue, giftKind_,
                 std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0)};
     }
@@ -405,8 +480,9 @@ private:
     [[nodiscard]] int scaledDuration(int durationMs) const {
         return std::max(40, (durationMs * 100 + speed_ / 2) / speed_);
     }
-    [[nodiscard]] int frameDuration(int durationMs) const {
-        return activity_ == Activity::Typing ? durationMs : scaledDuration(durationMs);
+    [[nodiscard]] int frameDuration(const Frame &frame) const {
+        return (activity_ == Activity::Typing || frame.absoluteDuration)
+            ? frame.durationMs : scaledDuration(frame.durationMs);
     }
     void begin(Story sequence, qint64 nowMs) {
         story_ = std::move(sequence);
@@ -414,7 +490,7 @@ private:
         if (story_.isEmpty()) { pose_ = F00; return; }
         pose_ = story_[0].pose;
         frameStartMs_ = nowMs;
-        nextFrame_ = nowMs + frameDuration(story_[0].durationMs);
+        nextFrame_ = nowMs + frameDuration(story_[0]);
     }
 
     Activity activity_ = Activity::Idle;
