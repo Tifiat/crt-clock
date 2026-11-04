@@ -195,7 +195,7 @@ int main() {
         const auto story = pet::fetchStory(variant);
         int vanishAt = -1, returnAt = -1, presentAt = -1;
         int tears = 0, bursts = 0, softSad = 0, angry = 0;
-        pet::GiftCue lastTear = pet::GiftCue::None;
+        pet::GiftCue lastTear{}; // Xlib defines None as a macro
         for (int i = 0; i < story.size(); ++i) {
             const auto &step = story[i];
             if (step.pose == pet::AwayGone) vanishAt = i;
