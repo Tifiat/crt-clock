@@ -284,7 +284,14 @@ public:
             text.save();
             const int breath = stockPet && idleBreathPhase >= 0 ?
                 (idleBreathPhase == 2 ? -1 : (idleBreathPhase == 5 ? 1 : 0)) : 0;
-            text.translate(motion.offsetX, motion.offsetY + breath);
+            // The historic IdleStep poses contain a +/-9px body offset.
+            // That was fine for stepping in place, but caused ~18px
+            // teleports whenever the walk exchanged left/right feet.
+            const int poseShift = stockPet && motion.gait
+                ? pet::frame(pose).bodyDx : 0;
+            const double correctedX = motion.offsetX +
+                (motion.mirror ? poseShift : -poseShift);
+            text.translate(correctedX, motion.offsetY + breath);
             if (motion.mirror && stockPet) {
                 constexpr qreal pivot = 190.0; // QRectF(-40,217,460,82).center().x()
                 text.translate(pivot, 0);
