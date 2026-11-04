@@ -47,3 +47,11 @@ The settings dialog uses a form with **labels on their own lines** (`QFormLayout
 ### v0.5.6: Verify desktop assignment, not just STICKY
 
 XFWM4 can leave `_NET_WM_STATE_STICKY` set while assigning the window to a single desktop. In EWMH, STICKY means viewport-stationary, not necessarily visible on all distinct XFCE workspaces. The periodic repair therefore checks only `_NET_WM_DESKTOP == 0xFFFFFFFF` for XFCE and reasserts the all-desktops request if lost. This prevents a false healthy state after calibration, settings, or focus changes.
+
+### v0.5.8: Calibration/desktop mapping correction
+
+- Both display and calibration now use the same **normal Qt::Window** type rather than Qt::Tool. Topmost/bottommost and focus rules still differ by mode. This reduces XFWM4 utility/transient workspace behavior when Qt recreates the native window.
+- Set `_NET_WM_DESKTOP = 0xFFFFFFFF` directly **only while the X11 window is unmapped**. On a mapped window, only send an EWMH ClientMessage and let the window manager update its own property. Previously writing it directly after map could fool our three-second readback into reporting success even when XFWM4 ignored the request.
+- Normal windows request `_NET_WM_STATE_SKIP_TASKBAR` and `_NET_WM_STATE_SKIP_PAGER` through EWMH so the widget remains out of the taskbar/workspace switcher.
+- Repeat requests at 0/200/700/1500/3000/5000 ms after mapping; retain existing Enter/Escape calibration retries and three-second readback repairs.
+- This is a targeted protocol/flag fix validated by CI, **not yet visually verified on the user's XFCE/X11**. If the problem persists, after calibration inspect the mapped window's `_NET_WM_DESKTOP` and `_NET_WM_WINDOW_TYPE` via `xprop -id <widget-id>`, and compare with `wmctrl -lx` before another code change.

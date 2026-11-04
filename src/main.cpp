@@ -208,7 +208,8 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, const pet::JoyTail &tail) {
+QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
+                  const pet::JoyTail &tail, int musicNotePhase) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -233,8 +234,11 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, const pe
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
-    pet::paint(text, QRectF(10, 217, 460, 82), cfg.petFont,
+    const QRectF petArea(10, 217, 460, 82);
+    pet::paint(text, petArea, cfg.petFont,
                cfg.pet, pose, petColor, cfg.petFontSize, cfg.petStroke, tail);
+    if (cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ"))
+        pet::paintMusicNotes(text, petArea, petColor, musicNotePhase);
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -303,6 +307,14 @@ public:
         const bool joyful = cfg_.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ") &&
                            pet::hasJoyfulEyes(pet::frame(animator_.pose()));
         dirty = joyTail_.advance(now, joyful, cfg_.petAnimationSpeed) || dirty;
+        // Decorative notes run independently while music is playing. Typing
+        // takes priority and suppresses them without changing Matrix timing.
+        const int nextNotePhase = animator_.activity() == pet::Activity::Music
+            ? int(((now * cfg_.petAnimationSpeed / 100) / 220) % 8) : -1;
+        if (nextNotePhase != musicNotePhase_) {
+            musicNotePhase_ = nextNotePhase;
+            dirty = true;
+        }
         const quint64 count = keyboard_->pressCount();
         if (count > keyPressCount_) {
             // Each detected press creates one decorative glyph, not the typed
@@ -539,8 +551,8 @@ public:
         });
         connect(dialog, &QObject::destroyed, this, [this] {
             settingsWindow_ = nullptr;
-            // The settings window may change how XFWM4 handles our tool
-            // window. Reassert affinity after dialog teardown and WM updates.
+            // The settings window may change workspace affinity after focus
+            // changes. Reassert after dialog teardown and WM updates.
             QTimer::singleShot(0, this, [this] { reassertWorkspaceStickiness(); });
             QTimer::singleShot(250, this, [this] { reassertWorkspaceStickiness(); });
             QTimer::singleShot(900, this, [this] { reassertWorkspaceStickiness(); });
@@ -697,9 +709,8 @@ private:
         selected_ = -1;
         if (save) redraw();
         applyMode();
-        // Switching from Qt::WindowStaysOnTopHint to WindowStaysOnBottomHint
-        // recreates the X11 widget window. XFWM4 can drop its workspace
-        // assignment after the first map/WM state requests have completed.
+        // Switching top/bottom hints recreates the native X11 window.
+        // Reassert the workspace assignment after WM remapping finishes.
         // Reassert only on this transition, including late WM processing.
         for (const int delayMs : {0, 250, 900, 2000, 4500}) {
             QTimer::singleShot(delayMs, this, [this] {
@@ -738,23 +749,20 @@ private:
         }
     }
     void redraw() {
-        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_);
+        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_,
+                            musicNotePhase_);
         if (matrix_.active()) rebuildMatrix();
         update();
     }
     void applyMode() {
         hide();
-        Qt::WindowFlags flags = Qt::Tool | Qt::FramelessWindowHint;
-        if (editing_) flags |= Qt::WindowStaysOnTopHint;
-        else flags |= Qt::WindowDoesNotAcceptFocus |
-                      Qt::WindowStaysOnBottomHint;
-        setWindowFlags(flags);
+        setWindowFlags(desktop::widgetWindowFlags(editing_));
         setAttribute(Qt::WA_TranslucentBackground);
         setAttribute(Qt::WA_ShowWithoutActivating, !editing_);
         setFocusPolicy(editing_ ? Qt::StrongFocus : Qt::NoFocus);
         setGeometry(editing_ ? screen_ : bounds(cfg_));
-        // Publish the desktop hint before map, then notify XFWM4 again after
-        // its manage/map cycle. hide()/setWindowFlags() recreates X11 windows.
+        // Publish the desktop hint before map, then request from XFWM4 again
+        // after it manages the new XID. hide()/setWindowFlags() remaps X11.
         desktop::keepOnEveryWorkspace(winId());
         show();
         QTimer::singleShot(0, this, [this] {
@@ -763,9 +771,11 @@ private:
         QTimer::singleShot(350, this, [this] {
             desktop::keepOnEveryWorkspace(winId());
         });
-        QTimer::singleShot(1200, this, [this] {
-            desktop::keepOnEveryWorkspace(winId());
-        });
+        for (const int delayMs : {200, 700, 1500, 3000, 5000}) {
+            QTimer::singleShot(delayMs, this, [this] {
+                if (isVisible()) desktop::keepOnEveryWorkspace(winId());
+            });
+        }
         if (editing_) { raise(); activateWindow(); setFocus(); }
     }
 
@@ -792,6 +802,7 @@ private:
     double clockIntensity_ = 1.0;
     QString lastMinute_;
     bool musicPlaying_ = false;
+    int musicNotePhase_ = -1;
     QDialog *settingsWindow_ = nullptr;
     bool editing_ = false;
 };

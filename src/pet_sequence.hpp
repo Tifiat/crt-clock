@@ -16,7 +16,8 @@ public:
 
     int next() {
         if (offset_ >= order_.size()) refill();
-        return order_[offset_++];
+        lastPicked_ = order_[offset_++];
+        return lastPicked_;
     }
 
 private:
@@ -28,11 +29,19 @@ private:
             const int j = QRandomGenerator::global()->bounded(i+1);
             std::swap(order_[i], order_[j]);
         }
+        // An independently shuffled new cycle may otherwise start with
+        // the previous cycle's final action. Avoid a back-to-back repeat
+        // while preserving one occurrence of every action in each cycle.
+        if (order_.size() > 1 && order_.front() == lastPicked_) {
+            const int alternate = QRandomGenerator::global()->bounded(1, int(order_.size()));
+            std::swap(order_[0], order_[alternate]);
+        }
         offset_ = 0;
     }
 
     int count_;
     QVector<int> order_;
     qsizetype offset_ = 0;
+    int lastPicked_ = -1;
 };
 } // namespace pet

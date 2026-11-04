@@ -1,6 +1,6 @@
 # Maintainer: Tifiat
 pkgname=crt-clock-git
-pkgver=0.5.7.r16.gca8ca82
+pkgver=0.5.8.r16.gca8ca82
 pkgrel=1
 pkgdesc='Perspective-mapped CRT clock with an animated ASCII companion for X11 (Git)'
 arch=('x86_64')

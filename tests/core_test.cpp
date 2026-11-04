@@ -152,9 +152,12 @@ int main() {
     const auto groove = pet::musicGrooveStory();
     require(groove.size() == 8 && pet::duration(groove) == 2240,
             "continuous music groove needs eight even beats");
-    for (const auto &step : groove)
+    for (const auto &step : groove) {
         require(step.durationMs == pet::kMusicBeatMs,
                 "groove lost common cadence");
+        require(step.pose != pet::F17 && step.pose != pet::F16,
+                "rapid alternate mouth shapes should not appear in baseline groove");
+    }
     require(pet::kMusicActionCount == 11, "featured music set incomplete");
     for (int n = 0; n < pet::kMusicActionCount; ++n) {
         const auto story = pet::musicStory(static_cast<pet::MusicAction>(n));
@@ -227,18 +230,100 @@ int main() {
     // ShuffleBag is not independent random drawing; every cycle covers all.
     for (const int count : {pet::kIdleActionCount, pet::kMusicActionCount}) {
         pet::ShuffleBag bag(count);
+        int lastAction = -1;
         for (int cycle = 0; cycle < 25; ++cycle) {
             std::vector<bool> seen(count, false);
             for (int i = 0; i < count; ++i) {
                 const int id = bag.next();
                 require(id >= 0 && id < count, "invalid shuffled action");
                 require(!seen[id], "duplicate action within cycle");
+                require(id != lastAction,
+                        "adjacent duplicate, including at shuffle cycle boundary");
+                lastAction = id;
                 seen[id] = true;
             }
             for (const bool selected : seen)
                 require(selected, "action skipped inside shuffled cycle");
         }
     }
+
+    // The REAL animator must consume all 11 unique featured actions before
+    // any repeats, not merely pass the ShuffleBag unit test in isolation.
+    pet::Animator fullQueue;
+    std::vector<bool> performed(pet::kMusicActionCount, false);
+    int completedSelections = 0;
+    bool previousFeature = false;
+    for (int t = 0; t < 85000 && completedSelections < pet::kMusicActionCount; t += 40) {
+        fullQueue.advance(t, false, true);
+        const bool feature = fullQueue.featuredMusic();
+        if (feature && !previousFeature) {
+            const int id = fullQueue.currentFeaturedAction();
+            require(id >= 0 && id < pet::kMusicActionCount,
+                    "music selected invalid action");
+            require(!performed[id], "real music scheduler repeated action before bag was exhausted");
+            performed[id] = true;
+            ++completedSelections;
+        }
+        previousFeature = feature;
+    }
+    require(completedSelections == pet::kMusicActionCount,
+            "real music scheduler did not complete the shuffled set");
+    for (bool selected : performed)
+        require(selected, "music scheduler skipped a featured dance");
+
+    // Typing interrupts and later resumes the SAME unfinished performance,
+    // without silently removing another item from the unique-action bag.
+    pet::Animator interrupted;
+    int at = 0;
+    for (; at < 4500; at += 40) {
+        interrupted.advance(at, false, true);
+        if (interrupted.featuredMusic()) break;
+    }
+    require(interrupted.featuredMusic(), "could not reach featured music");
+    const int interruptedAction = interrupted.currentFeaturedAction();
+    interrupted.advance(at + 40, true, true);
+    require(interrupted.activity() == pet::Activity::Typing,
+            "typing must interrupt the featured dance");
+    interrupted.advance(at + 80, false, true);
+    int resumedAction = -1;
+    for (int t = at + 120; t < at + 5500; t += 40) {
+        interrupted.advance(t, false, true);
+        if (interrupted.featuredMusic()) {
+            resumedAction = interrupted.currentFeaturedAction();
+            break;
+        }
+    }
+    require(resumedAction == interruptedAction,
+            "interrupted featured action must be replayed before advancing bag");
+
+    // Notes are ALWAYS offered by the active music mode, independently
+    // of EyesClosedNotes being selected. They use vector geometry with
+    // no dependency on any installed musical-note font.
+    const QRectF notesArea(10, 217, 460, 82);
+    for (int phase = 0; phase < 8; ++phase) {
+        QImage image(480, 320, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        {
+            QPainter painter(&image);
+            pet::paintMusicNotes(painter, notesArea, QColor("#88FF88"), phase);
+        }
+        int visiblePixels = 0;
+        for (int y = 193; y < 245; ++y)
+            for (int x = 260; x < 390; ++x)
+                if (image.pixelColor(x, y).alpha() > 0) ++visiblePixels;
+        require(visiblePixels > 40,
+                "background music notes should appear at every music phase");
+    }
+    QImage silent(480, 320, QImage::Format_ARGB32_Premultiplied);
+    silent.fill(Qt::transparent);
+    {
+        QPainter painter(&silent);
+        pet::paintMusicNotes(painter, notesArea, QColor("#88FF88"), -1);
+    }
+    for (int y = 193; y < 245; ++y)
+        for (int x = 260; x < 390; ++x)
+            require(silent.pixelColor(x, y).alpha() == 0,
+                    "notes should be hidden during idle and typing");
 
     // Matrix input has no key values and produces two independently rising
     // columns without changing the pet renderer or changing fonts.
@@ -324,6 +409,20 @@ int main() {
             "first workspace must not pass all-workspaces check");
     require(!desktop::isAllDesktopsValue(1UL),
             "second workspace must not pass all-workspaces check");
+    // Calibration must keep the same ordinary top-level X11 window type as
+    // display mode; changing Qt::Tool to a normal window during a remap can
+    // cause XFWM4 to tie the recreated native window to one workspace.
+    const auto displayFlags = desktop::widgetWindowFlags(false);
+    const auto editFlags = desktop::widgetWindowFlags(true);
+    require((displayFlags & Qt::WindowType_Mask) == Qt::Window &&
+            (editFlags & Qt::WindowType_Mask) == Qt::Window,
+            "widget must remain a normal top-level window in both modes");
+    require(displayFlags.testFlag(Qt::WindowStaysOnBottomHint) &&
+            displayFlags.testFlag(Qt::WindowDoesNotAcceptFocus),
+            "display must stay below and not grab focus");
+    require(editFlags.testFlag(Qt::WindowStaysOnTopHint) &&
+            !editFlags.testFlag(Qt::WindowDoesNotAcceptFocus),
+            "calibration must remain interactive and on top");
 
     // Old four-corner configs still get exactly four derived edge midpoints.
     const std::array<QPointF,4> old{

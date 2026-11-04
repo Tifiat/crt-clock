@@ -85,8 +85,10 @@ inline Story musicBeatStory(std::initializer_list<int> poses) {
 }
 
 inline Story musicGrooveStory() {
-    return musicBeatStory({F00, NodDown, NodUp, F17,
-                           NodDown, NodUp, F17, F00});
+    // Keep the baseline mouth neutral. Facial changes belong to the
+    // featured dances, not a smile flashing twice every 2.24 seconds.
+    return musicBeatStory({F00, NodDown, NodUp, F00,
+                           NodDown, NodUp, F00, F00});
 }
 
 // Full featured performances: consistent movement tempo and a neutral exit.
@@ -166,10 +168,15 @@ public:
         const Activity desired = typing ? Activity::Typing :
                                  playing ? Activity::Music : Activity::Idle;
         if (desired != activity_) {
+            // A featured dance is only considered completed after its final
+            // frame. Typing/pausing must not silently consume a bag action.
+            if (activity_ == Activity::Music && inFeaturedMusic_)
+                pendingFeatured_ = currentFeatured_;
             activity_ = desired;
             story_.clear();
             frameIndex_ = 0;
             inFeaturedMusic_ = false;
+            currentFeatured_ = -1;
             idleDue_ = nowMs + scaledDuration(1200);
             if (desired == Activity::Typing) begin(typingStory(), nowMs);
             else if (desired == Activity::Music) begin(musicGrooveStory(), nowMs);
@@ -185,10 +192,14 @@ public:
                 if (activity_ == Activity::Music) {
                     if (inFeaturedMusic_) {
                         inFeaturedMusic_ = false;
+                        currentFeatured_ = -1;
                         begin(musicGrooveStory(), nowMs);
                     } else {
+                        currentFeatured_ = pendingFeatured_ >= 0
+                            ? pendingFeatured_ : musicCycle_.next();
+                        pendingFeatured_ = -1;
                         inFeaturedMusic_ = true;
-                        begin(musicStory(static_cast<MusicAction>(musicCycle_.next())),
+                        begin(musicStory(static_cast<MusicAction>(currentFeatured_)),
                               nowMs);
                     }
                 } else if (activity_ == Activity::Typing) {
@@ -216,6 +227,9 @@ public:
     [[nodiscard]] bool featuredMusic() const {
         return activity_ == Activity::Music && inFeaturedMusic_;
     }
+    [[nodiscard]] int currentFeaturedAction() const {
+        return featuredMusic() ? currentFeatured_ : -1;
+    }
 
 private:
     [[nodiscard]] int scaledDuration(int durationMs) const {
@@ -239,6 +253,8 @@ private:
     int lastPose_ = -1;
     int speed_ = kDefaultAutonomousSpeed;
     bool inFeaturedMusic_ = false;
+    int currentFeatured_ = -1;
+    int pendingFeatured_ = -1;
     ShuffleBag musicCycle_{kMusicActionCount};
     ShuffleBag idleCycle_{kIdleActionCount};
     qint64 nextFrame_ = 0;

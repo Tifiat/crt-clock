@@ -8,6 +8,16 @@
 // XFWM4 can read the property at initial map; sending ClientMessages after
 // mapping additionally requests sticky state for an already-managed window.
 namespace desktop {
+// Use the SAME normal top-level X11 window type in calibration and display.
+// Qt::Tool can carry utility/transient WM semantics that tie a remapped
+// window to the active desktop after setWindowFlags() recreates its XID.
+inline Qt::WindowFlags widgetWindowFlags(bool editing) {
+    Qt::WindowFlags flags = Qt::Window | Qt::FramelessWindowHint;
+    if (editing) flags |= Qt::WindowStaysOnTopHint;
+    else flags |= Qt::WindowDoesNotAcceptFocus | Qt::WindowStaysOnBottomHint;
+    return flags;
+}
+
 inline void keepOnEveryWorkspace(WId nativeWindow) {
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) return;
@@ -19,8 +29,16 @@ inline void keepOnEveryWorkspace(WId nativeWindow) {
     const Atom sticky = XInternAtom(dpy, "_NET_WM_STATE_STICKY", False);
 
     unsigned long allDesktops = 0xFFFFFFFFUL;
-    XChangeProperty(dpy, window, desktop, cardinal, 32, PropModeReplace,
-                    reinterpret_cast<const unsigned char *>(&allDesktops), 1);
+    // Property assignment is for the pre-map (withdrawn) window only.
+    // Once mapped, send ClientMessage and let XFWM4 OWN this property.
+    // Writing it directly after mapping previously made readback report
+    // 0xFFFFFFFF even when the WM had not honored the request.
+    XWindowAttributes attributes{};
+    const bool isMapped = XGetWindowAttributes(dpy, window, &attributes) &&
+                          attributes.map_state != IsUnmapped;
+    if (!isMapped)
+        XChangeProperty(dpy, window, desktop, cardinal, 32, PropModeReplace,
+                        reinterpret_cast<const unsigned char *>(&allDesktops), 1);
 
     XEvent request{};
     request.xclient.type = ClientMessage;
@@ -45,6 +63,21 @@ inline void keepOnEveryWorkspace(WId nativeWindow) {
     stickyRequest.xclient.data.l[3] = 1; // application
     XSendEvent(dpy, root, False,
                SubstructureRedirectMask | SubstructureNotifyMask, &stickyRequest);
+    // A normal Qt::Window stays out of the taskbar and workspace pager
+    // through EWMH hints rather than relying on Qt::Tool window semantics.
+    XEvent skipRequest{};
+    skipRequest.xclient.type = ClientMessage;
+    skipRequest.xclient.window = window;
+    skipRequest.xclient.message_type = state;
+    skipRequest.xclient.format = 32;
+    skipRequest.xclient.data.l[0] = 1; // _NET_WM_STATE_ADD
+    skipRequest.xclient.data.l[1] = static_cast<long>(
+        XInternAtom(dpy, "_NET_WM_STATE_SKIP_TASKBAR", False));
+    skipRequest.xclient.data.l[2] = static_cast<long>(
+        XInternAtom(dpy, "_NET_WM_STATE_SKIP_PAGER", False));
+    skipRequest.xclient.data.l[3] = 1;
+    XSendEvent(dpy, root, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &skipRequest);
     XFlush(dpy);
     XCloseDisplay(dpy);
 }
@@ -79,6 +112,5 @@ inline bool isOnEveryWorkspace(WId nativeWindow) {
 
     XCloseDisplay(dpy);
     return assignedEverywhere;
-
 }
 } // namespace desktop
