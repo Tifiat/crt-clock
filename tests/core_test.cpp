@@ -337,9 +337,10 @@ int main(int argc, char **argv) {
             peek[1].absoluteDuration && peek[1].durationMs >= 1800,
             "side glance must happen ONCE and return to idle");
     const auto shy = pet::idleStory(pet::IdleAction::Shy);
-    require(shy.size() == 5 && shy[2].pose == pet::F08 &&
-            shy[2].absoluteDuration && shy[2].durationMs >= 2200,
-            "shy eyes should be entered and exited exactly once");
+    require(shy.size() == 3 && shy[1].pose == pet::F08 &&
+            shy[1].absoluteDuration && shy[1].durationMs >= 2800 &&
+            shy[1].blush,
+            "Shy must hold one bashful pose and blush, not cycle eyes");
     require(pet::frame(pet::SadCry).line == QStringLiteral("(づ｡•﹏﹏•｡)づ"),
             "crying uses dots rather than semicolons obscuring drawn tears");
 
