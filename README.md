@@ -204,3 +204,56 @@ Matrix recompositions and cumulative static-clock/sprite cache builds.
 The profiler is **off by default** and does not change saved settings.
 If the terminal is closed, this temporary attached profiling process may
 exit; use the documented `setsid -f` restart afterward.
+
+## v0.6.4 — cached 8-point perspective; flowing tears
+
+After v0.6.3 the user's Arch/XFCE profiler reported average
+`CanvasCache::render` 5–10 ms but average `paintEvent` 16–21 ms during
+animated frames and typing. Previously each Qt paint had four separate
+`quadToQuad` transforms of the 480×320 canvas, plus another four for
+Matrix, and redrew the scanlines/grille every frame.
+
+In v0.6.4 the original eight-handle calibration geometry is retained:
+
+- `perspective::RasterCache` builds the **same four projective cells**
+  only when the eight handles, window size, or origin changes. The
+  cached inverse map gives source coordinates for each covered screen
+  pixel. Animated frames use lightweight bilinear sampling of
+  premultiplied colors through that map.
+- Matrix is composited with the pet/clock in the same projection pass,
+  not sent through another four transformations.
+- Screen-space CRT scanlines and aperture grille are cached as a
+  transparent image and redrawn only when the relevant settings or
+  perspective geometry changes. Dynamic ripple remains dynamic.
+- Rendering stays at the same 25 FPS. Animated gifts, typing,
+  lighting/glow, font, and persistent calibration remain available.
+- Crying scenes now use several staggered, overlapping tears from **both
+  eyes** throughout their existing long sadness holds, rather than one
+  isolated drop per cue.
+
+The optional profiler now additionally reports `warpRebuilds`,
+`avgWarpMs` and `cachedWarpMaps`. A static calibration should keep
+`cachedWarpMaps` stable even across a long typing session.
+
+For a direct performance/appearance comparison against the old
+perspective pipeline, stop the existing instance and start one of:
+
+```bash
+# Optimized renderer, with profiling
+crt-clock --quit
+CRT_CLOCK_PROFILE=1 crt-clock 2> /tmp/crt-clock-profile-new.log
+
+# After quitting, compare old perspective mapping with the same settings
+crt-clock --quit
+CRT_CLOCK_PROFILE=1 CRT_CLOCK_LEGACY_PERSPECTIVE=1 crt-clock \
+  2> /tmp/crt-clock-profile-legacy.log
+```
+
+Only **one** instance runs at a time. The environment flag is read when
+the server process starts; issuing the command while the existing widget
+is running will not switch its renderer. This is a comparison mechanism,
+not a persistent configuration change.
+
+The baseline/optimized timing tests and the XFWM4 four-workspace
+integration test run in CI. CPU percentages must be measured on the
+actual laptop; CI cannot predict XFCE compositor costs.
