@@ -16,7 +16,8 @@ namespace pet {
 
 inline void paint(QPainter &p, const QRectF &area, const QString &family,
                   const QString &original, int poseId, QColor color,
-                  int fontPixels, int strokeStrength, const JoyTail &tail) {
+                  int fontPixels, int strokeStrength, const JoyTail &tail,
+                  const MotionVisual &motion = {}) {
     const int thickness = std::clamp(strokeStrength, 0, 100);
     QFont font(family);
     font.setPixelSize(std::clamp(fontPixels, 30, 54));
@@ -36,6 +37,14 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
     const Pose pose = frame(poseId);
     if (pose.hidden) return;
     p.save();
+    if (motion.mirror) {
+        // True visual turn: reflect only the actor during the return leg
+        // of Patrol, never the whole CRT canvas, clock or particles.
+        const qreal pivot = area.center().x() + motion.offsetX;
+        p.translate(pivot, 0);
+        p.scale(-1.0, 1.0);
+        p.translate(-pivot, 0);
+    }
     if (pose.retreatScale < 1.0) {
         // Rare fetch story only. The character's authored grid and font stay
         // unchanged; the completed rear-facing figure shrinks as it walks away.
@@ -48,7 +57,7 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
     const int cell = pose.back ? kBackCellPixels : kFrontCellPixels;
     const qreal width = columns * cell;
     const qreal left = area.center().x() - width / 2.0
-                      - (pose.typing ? 20 : 0) + pose.bodyDx;
+                      - (pose.typing ? 20 : 0) + pose.bodyDx + motion.offsetX;
     const qreal top = area.top() + pose.bodyDy;
 
     // The default is deliberately lighter than the previous five impressions.
@@ -73,6 +82,26 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
         for (int i = 0; i < strokes; ++i)
             p.drawText(slot.translated(offsets[i][0], offsets[i][1]),
                        Qt::AlignCenter | Qt::TextSingleLine, letter);
+    }
+
+    if (pose.back && poseId >= AwayFace && poseId <= AwayReturn) {
+        // Real curved wagging tail for the walk-away silhouette.
+        // Previous centered white circle looked like a dot/anus.
+        const int sway = (poseId % 3) - 1;
+        const QPointF root(left + width/2, area.center().y() + 13);
+        const QPointF tip(root.x() + sway*15 + 3, root.y() - 23);
+        QPainterPath tailPath;
+        tailPath.moveTo(root);
+        tailPath.cubicTo(root.x() - 11, root.y() - 15,
+                         tip.x() + 9, tip.y() + 16, tip.x(), tip.y());
+        p.save();
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(color, 3.1, Qt::SolidLine,
+                      Qt::RoundCap, Qt::RoundJoin));
+        p.drawPath(tailPath);
+        p.setBrush(color);
+        p.drawEllipse(tip, 4.5, 4.5);
+        p.restore();
     }
 
     // The joyful dot is attached to the body, between the closing bracket
@@ -101,6 +130,22 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
         p.drawPolygon(sparkle);
         p.restore();
     }
+    p.restore();
+}
+
+// Sparse gestural marks only while the music character sways.
+// The mark is on the OPPOSITE side of the movement, not permanent idle noise.
+inline void paintGestureStreak(QPainter &p, const QRectF &area,
+                               QColor color, int direction) {
+    if (direction == 0) return;
+    p.save();
+    color.setAlphaF(color.alphaF() * .33);
+    p.setPen(QPen(color, 1.7, Qt::SolidLine, Qt::RoundCap));
+    const qreal edge = area.center().x() + (direction < 0 ? 168 : -168);
+    const qreal y = area.center().y();
+    const qreal side = direction < 0 ? 1.0 : -1.0;
+    p.drawLine(QPointF(edge, y - 11), QPointF(edge + side*9, y - 14));
+    p.drawLine(QPointF(edge, y + 2), QPointF(edge + side*6, y + 2));
     p.restore();
 }
 
