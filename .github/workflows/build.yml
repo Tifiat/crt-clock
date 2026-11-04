@@ -6,15 +6,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt 6
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake qt6-base-dev libx11-dev
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake qt6-base-dev libx11-dev xvfb xfwm4 wmctrl dbus-x11
       - name: Validate AUR packaging scripts
         run: |
           bash -n packaging/aur/PKGBUILD
           bash -n packaging/aur/publish.sh
           grep -q '^pkgname=crt-clock-git$' packaging/aur/PKGBUILD
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCRT_XFWM4_INTEGRATION_TEST=ON
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test core logic
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build -R core-geometry-and-pet --output-on-failure
+      - name: Test XFWM4 calibration across 4 X11 workspaces
+        run: |
+          xvfb-run -a dbus-run-session -- bash -c '
+            xfwm4 --compositor=off >/tmp/crt-xfwm4.log 2>&1 &
+            for i in $(seq 1 40); do
+              wmctrl -m >/dev/null 2>&1 && break
+              sleep 0.25
+            done
+            wmctrl -n 4
+            ctest --test-dir build -R workspace-xfwm4 --output-on-failure || {
+              cat /tmp/crt-xfwm4.log
+              exit 1
+            }
+          '
