@@ -192,10 +192,17 @@ int main() {
             "rare idle stories should be recognizable complete actions");
     bool leftStep = false, rightStep = false, gift = false, farAway = false;
     bool vanished = false, returnsFront = false;
+    int patrolRight = 0, patrolLeft = 0;
+    bool mirroredReturn = false;
     for (const auto &step : patrol) {
         leftStep |= step.pose == pet::IdleStepLeft;
         rightStep |= step.pose == pet::IdleStepRight;
+        patrolRight = std::max(patrolRight, std::max(step.moveFrom, step.moveTo));
+        patrolLeft = std::min(patrolLeft, std::min(step.moveFrom, step.moveTo));
+        mirroredReturn |= step.mirror && step.moveTo < step.moveFrom;
     }
+    require(patrolRight >= 150 && patrolLeft <= -120 && mirroredReturn,
+            "Patrol must cross canvas and reverse with mirror");
     for (const auto &step : fetch) {
         gift |= step.cue == pet::GiftCue::Present;
         farAway |= step.pose == pet::AwayTiny;
