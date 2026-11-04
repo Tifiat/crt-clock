@@ -236,7 +236,9 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
-    const QRectF petArea(10, 217, 460, 82);
+    // Leave the right-hand side clear for gifts and the music/typing strip.
+    // The perspective handles, clock/date geometry and font grid stay put.
+    const QRectF petArea(-40, 217, 460, 82);
     const bool stockPet = cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ");
     text.save();
     if (stockPet && idleBreathPhase >= 0)
