@@ -409,6 +409,7 @@ public:
     }
 
     bool advance(qint64 nowMs, bool typing, bool playing) {
+        bool frameChanged = false;
         // The explicit preview plays through even with music in the
         // background, but typing retains its normal highest priority.
         if (typing) previewActive_ = false;
@@ -416,6 +417,7 @@ public:
                                  previewActive_ ? previewActivity_ :
                                  playing ? Activity::Music : Activity::Idle;
         if (desired != activity_) {
+            frameChanged = true;
             // A featured dance is only considered completed after its final
             // frame. Typing/pausing must not silently consume a bag action.
             if (activity_ == Activity::Music && inFeaturedMusic_)
@@ -433,6 +435,7 @@ public:
 
         if (activity_ == Activity::Idle && !previewActive_ &&
             story_.isEmpty() && nowMs >= idleDue_) {
+            frameChanged = true;
             const auto action = static_cast<IdleAction>(idleCycle_.next());
             if (action == IdleAction::Fetch) {
                 giftKind_ = static_cast<GiftKind>(giftCycle_.next());
@@ -443,6 +446,7 @@ public:
         }
 
         if (!story_.isEmpty() && nowMs >= nextFrame_) {
+            frameChanged = true;
             ++frameIndex_;
             if (frameIndex_ >= story_.size()) {
                 if (previewActive_) {
@@ -489,7 +493,7 @@ public:
             story_[frameIndex_].moveFrom != story_[frameIndex_].moveTo;
         const bool particles = activity_ == Activity::Idle && !story_.isEmpty() &&
             story_[frameIndex_].cue != GiftCue::Inactive;
-        return changed || interpolating || particles;
+        return changed || frameChanged || interpolating || particles;
     }
 
     [[nodiscard]] int pose() const { return pose_; }
