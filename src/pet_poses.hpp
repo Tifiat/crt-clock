@@ -53,6 +53,14 @@ struct Pose {
     int mouthDy = 0; // lower the mouth without shrinking the face
 };
 
+// Scripted whole-character movement. Never changes the original glyph grid.
+// mirror applies only to the actual walk-back sequence in Idle::Patrol.
+struct MotionVisual {
+    double offsetX = 0.0;
+    bool mirror = false;
+    int streak = 0; // -1: travelling left, +1: travelling right
+};
+
 // All front-facing frames occupy exactly ten fixed columns. Historical
 // backside wagging is a deliberate eleven-column alternate silhouette.
 inline Pose frame(int id) {
