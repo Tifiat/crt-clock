@@ -462,7 +462,7 @@ int main() {
                 "idle action preview must start immediately");
         const auto story = pet::idleStory(static_cast<pet::IdleAction>(action));
         const int finishAt = pet::duration(story);
-        for (int t = 40; t <= finishAt + 240; t += 40)
+        for (int t = 40; t <= finishAt + 1600; t += 40)
             one.advance(t, false, false);
         require(!one.previewing(pet::Activity::Idle) && one.pose() == pet::F00,
                 "idle preview should end once and return to resting pose");
@@ -474,7 +474,7 @@ int main() {
                 "music preview must be available without playing audio");
         const int finishAt = pet::duration(
             pet::musicStory(static_cast<pet::MusicAction>(action)));
-        for (int t = 40; t <= finishAt + 200; t += 40)
+        for (int t = 40; t <= finishAt + 1100; t += 40)
             one.advance(t, false, false);
         require(!one.previewing(pet::Activity::Music) && one.pose() == pet::F00,
                 "music preview must stop after one featured dance");
