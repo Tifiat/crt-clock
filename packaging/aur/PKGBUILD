@@ -1,0 +1,35 @@
+# Maintainer: Tifiat
+pkgname=crt-clock-git
+pkgver=0.5.7.r16.gca8ca82
+pkgrel=1
+pkgdesc='Perspective-mapped CRT clock with an animated ASCII companion for X11 (Git)'
+arch=('x86_64')
+url='https://github.com/Tifiat/crt-clock'
+license=('MIT')
+depends=('qt6-base' 'libx11')
+makedepends=('cmake' 'git')
+provides=('crt-clock')
+conflicts=('crt-clock')
+source=('crt-clock::git+https://github.com/Tifiat/crt-clock.git#branch=main')
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/crt-clock"
+    local version
+    version="$(sed -n 's/^project(crt-clock VERSION \([0-9.]*\) LANGUAGES CXX)$/\1/p' CMakeLists.txt)"
+    [[ -n "$version" ]] || return 1
+    printf '%s.r%s.g%s' "$version" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+    cmake -S "$srcdir/crt-clock" -B "$srcdir/build" \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+        -DBUILD_TESTING=OFF
+    cmake --build "$srcdir/build" --parallel 2
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install "$srcdir/build"
+    install -Dm644 "$srcdir/crt-clock/LICENSE" \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

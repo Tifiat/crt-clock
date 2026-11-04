@@ -24,6 +24,13 @@ crt-clock
 
 Requires Qt 6 and X11; `makepkg` installs package dependencies.
 
+## AUR package (maintainer publication)
+
+The `crt-clock-git` PKGBUILD and publication helper are in
+[packaging/aur](packaging/aur/README.md). The package tracks Git `main` and
+is intended for `yay -S crt-clock-git` **after** an authenticated AUR maintainer
+publishes it. GitHub alone cannot publish packages to AUR.
+
 ## Controls
 
 | Command / shortcut | Action |
