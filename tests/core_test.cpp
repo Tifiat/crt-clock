@@ -423,6 +423,36 @@ int main() {
     require(resumedAction == interruptedAction,
             "interrupted featured action must be replayed before advancing bag");
 
+    // Manual preview runs even when MPRIS is playing, so all five rare
+    // gift endings can be inspected without waiting for the idle shuffle.
+    // It must not turn into a permanent override after the story finishes.
+    pet::Animator giftDemo;
+    giftDemo.previewGift(pet::GiftKind::BurstSad, 0);
+    bool demoGone = false, demoReturn = false, demoBurst = false;
+    bool demoLeftTear = false, demoRightTear = false;
+    bool musicRestored = false;
+    for (int t = 0; t <= 21000; t += 40) {
+        giftDemo.advance(t, false, true);
+        if (giftDemo.pose() == pet::AwayGone) demoGone = true;
+        if (giftDemo.pose() == pet::ReturnPeek) demoReturn = true;
+        const auto visual = giftDemo.giftVisual(t);
+        demoBurst |= visual.cue == pet::GiftCue::Burst &&
+                     visual.progress > .2 && visual.progress < .8;
+        demoLeftTear |= visual.cue == pet::GiftCue::TearLeft;
+        demoRightTear |= visual.cue == pet::GiftCue::TearRight;
+        if (giftDemo.activity() == pet::Activity::Music) musicRestored = true;
+    }
+    require(demoGone && demoReturn && demoBurst &&
+            demoLeftTear && demoRightTear && musicRestored,
+            "preview must show complete story, timed explosion/tears and restore music");
+
+    pet::Animator typingDuringPreview;
+    typingDuringPreview.previewGift(pet::GiftKind::StarFly, 0);
+    typingDuringPreview.advance(40, true, true);
+    require(typingDuringPreview.activity() == pet::Activity::Typing &&
+            !typingDuringPreview.giftVisual(40).active(),
+            "typing must cancel gift preview without leaving particles");
+
     // Music is a dense vertical stream within Matrix's former right-hand
     // strip. Notes are vector strokes and vanish toward the clock above.
     for (int phase : {0, 4, 8, 15, 27, 41}) {
