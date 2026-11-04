@@ -40,6 +40,7 @@ struct Frame {
     int streak = 0;
     bool absoluteDuration = false; // hold/read emotion; speed affects gestures
     int carryDx = 0; // carried gift offset while entering the canvas
+    bool blush = false; // only the held shy expression
 };
 
 // Eyegaze and sleep need a readable minimum independent of fast limb tempo.
@@ -48,6 +49,12 @@ inline Frame hold(int pose, int ms, GiftCue cue = GiftCue::Inactive) {
     Frame frame{pose, ms, cue};
     frame.absoluteDuration = true;
     return frame;
+}
+
+inline Frame shyHold(int pose, int ms) {
+    Frame f = hold(pose, ms);
+    f.blush = true;
+    return f;
 }
 
 inline Frame walk(int pose, int ms, int from, int to, bool mirror = false) {
@@ -177,10 +184,9 @@ inline Story idleStory(IdleAction action) {
             return {{F00, 550},hold(F06, 1750),hold(F09, 800),
                     hold(F06, 1600),{F00, 1050}};
         case IdleAction::Shy:
-            // One soft transition into the 'roof' eyes and back. No
-            // alternation of dot / roof / dot / roof eyes.
-            return {{F00, 600}, hold(F07, 850), hold(F08, 2650),
-                    hold(F07, 950), {F00, 1100}};
+            // One bashful pose, with action-only cheek blush and a small
+            // bowed-head bob. No dot/roof/dot eye switching.
+            return {{F00, 650}, shyHold(F08, 3000), {F00, 1200}};
         case IdleAction::Sleepy:
             return {{F00, 950},hold(F13, 3400),{F01, 260},
                     hold(F13, 3200),{F00, 1400}};
@@ -524,10 +530,12 @@ public:
         // Constant horizontal speed across short gait frames. Each step
         // briefly lifts the body and returns to y=0 at the next boundary.
         const bool moving = f.moveFrom != f.moveTo;
-        const double y = moving ? -3.0*std::sin(std::numbers::pi*t) : 0.0;
+        const double y = moving ? -3.0*std::sin(std::numbers::pi*t)
+                         : f.blush ? 1.6*std::sin(std::numbers::pi*t) : 0.0;
         return {f.moveFrom + (f.moveTo - f.moveFrom) * t,
                 y, f.mirror, f.streak,
-                moving && (f.pose == IdleStepLeft || f.pose == IdleStepRight)};
+                moving && (f.pose == IdleStepLeft || f.pose == IdleStepRight),
+                f.blush};
     }
     [[nodiscard]] GiftVisual giftVisual(qint64 nowMs) const {
         if (activity_ != Activity::Idle || story_.isEmpty()) return {};
