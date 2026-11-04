@@ -218,6 +218,7 @@ int main() {
         const auto story = pet::fetchStory(variant);
         int vanishAt = -1, returnAt = -1, presentAt = -1;
         int tears = 0, bursts = 0, softSad = 0, calm = 0;
+        int carried = 0, handoff = 0, flew = 0;
         int lastTearIndex = -1, lastTearAtMs = 0, elapsedMs = 0;
         pet::GiftCue lastTear{}; // Xlib defines None as a macro
         for (int i = 0; i < story.size(); ++i) {
@@ -225,6 +226,14 @@ int main() {
             if (step.pose == pet::AwayGone) vanishAt = i;
             if (step.pose == pet::ReturnPeek) returnAt = i;
             if (step.cue == pet::GiftCue::Present) presentAt = i;
+            if (step.cue == pet::GiftCue::Carry) ++carried;
+            if (step.cue == pet::GiftCue::Transfer) ++handoff;
+            if (step.cue == pet::GiftCue::FlyStraight ||
+                step.cue == pet::GiftCue::FlyArc) {
+                ++flew;
+                require(step.durationMs >= 5200 && step.absoluteDuration,
+                        "flight must be long and independent of limb tempo");
+            }
             if (step.cue == pet::GiftCue::Burst) ++bursts;
             if (step.pose == pet::SadSoft) ++softSad;
             if (step.pose == pet::F13) ++calm;
@@ -249,6 +258,13 @@ int main() {
                 "gift story timeline/neutral exit invalid");
         require(story[vanishAt].durationMs >= 3000,
                 "pet must stay gone visibly before returning");
+        require(carried == 4 && story[returnAt].cue == pet::GiftCue::Carry &&
+                story[returnAt].carryDx == -200,
+                "gift should be visible in the pet's hand on first reentry");
+        if (variant == pet::GiftKind::StarFly ||
+            variant == pet::GiftKind::ArcFly)
+            require(handoff == 1 && flew == 1,
+                    "flying gift must transfer from right to left hand");
         require(story[returnAt].pose == pet::ReturnPeek &&
                 !pet::frame(story[returnAt].pose).back,
                 "return must show the original front-facing pet");
