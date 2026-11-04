@@ -60,6 +60,23 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
                        Qt::AlignCenter | Qt::TextSingleLine, letter);
     }
 
+    // Only the four authored listening frames emit two musical notes.
+    // This is a separate fixed-position overlay above the pet, not an
+    // 11th/12th glyph cell. Phase moves notes upward within the free row.
+    if (!pose.back && pose.notePhase >= 0) {
+        p.save();
+        QFont notesFont(font);
+        notesFont.setPixelSize(22);
+        notesFont.setWeight(QFont::Medium);
+        p.setFont(notesFont);
+        const qreal rise = pose.notePhase * 7.0;
+        p.drawText(QRectF(area.center().x() + 30, area.top() + 6 - rise, 30, 29),
+                   Qt::AlignCenter | Qt::TextSingleLine, QStringLiteral("♪"));
+        p.drawText(QRectF(area.center().x() + 93, area.top() + 16 - rise, 32, 29),
+                   Qt::AlignCenter | Qt::TextSingleLine, QStringLiteral("♫"));
+        p.restore();
+    }
+
     // The joyful dot is attached to the body, between the closing bracket
     // and right paw, NOT beyond the paw as it was in v0.5.1.
     if (!pose.back && tail.visible()) {
