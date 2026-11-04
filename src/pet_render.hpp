@@ -37,6 +37,7 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
     const Pose pose = frame(poseId);
     if (pose.hidden) return;
     p.save();
+    p.translate(0, motion.offsetY);
     if (motion.mirror) {
         // True visual turn: reflect only the actor during the return leg
         // of Patrol, never the whole CRT canvas, clock or particles.
