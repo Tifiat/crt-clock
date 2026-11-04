@@ -15,7 +15,7 @@ constexpr int kFrontCellPixels = 31;
 constexpr int kBackCellPixels = 28;
 constexpr int kDefaultFontPixels = 43;
 constexpr int kDefaultStrokeStrength = 25;
-constexpr int kPoseCount = 39;
+constexpr int kPoseCount = 45;
 
 enum PoseId : int {
     F00 = 0, F01, F02, F03, F04, F05, F06, F07, F08, F09,
@@ -24,7 +24,10 @@ enum PoseId : int {
     B00, B01, B02,
     NodDown, NodUp, SwayLeft, SwayRight, BounceUp, BounceDown,
     T00, T01, T02,
-    JoyTailLeft, JoyTailRight
+    JoyTailLeft, JoyTailRight,
+    // New IDs append only: the 39 historic pose values never change.
+    ListenNote0, ListenNote1, ListenNote2, ListenNote3,
+    StepLeft, StepRight
 };
 
 struct Pose {
@@ -35,6 +38,7 @@ struct Pose {
     int headDy = 0;
     int bodyDx = 0;
     int bodyDy = 0;
+    int notePhase = -1; // -1 = no notes; 0..3 = authored upward flight
 };
 
 // All front-facing frames occupy exactly ten fixed columns. Historical
@@ -68,12 +72,12 @@ inline Pose frame(int id) {
         case B00: p.line = QStringLiteral("ᕦ(   ●   )ᕤ"); p.back = true; break;
         case B01: p.line = QStringLiteral("ᕤ(  ●    )ᕦ"); p.back = true; break;
         case B02: p.line = QStringLiteral("ᕦ(    ●  )ᕤ"); p.back = true; break;
-        case NodDown: p.headDy = 3; break;
-        case NodUp: p.headDy = -3; break;
-        case SwayLeft: p.bodyDx = -3; break;
-        case SwayRight: p.bodyDx = 3; break;
-        case BounceUp: p.bodyDy = -3; break;
-        case BounceDown: p.bodyDy = 3; break;
+        case NodDown: p.headDy = 5; break;
+        case NodUp: p.headDy = -5; break;
+        case SwayLeft: p.bodyDx = -8; break;
+        case SwayRight: p.bodyDx = 8; break;
+        case BounceUp: p.bodyDy = -6; break;
+        case BounceDown: p.bodyDy = 6; break;
         case T00: p.typing = true; break;
         case T01: p.line = QStringLiteral("(っ｡◕‿‿◕｡)っ"); p.typing = true; break;
         case T02: p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ"); p.typing = true; break;
@@ -81,6 +85,23 @@ inline Pose frame(int id) {
         // by JoyTail; these legacy frames no longer impose their own wag.
         case JoyTailLeft:
         case JoyTailRight: p.line = QStringLiteral("(づ｡>‿‿<｡)づ"); break;
+        case ListenNote0:
+        case ListenNote1:
+        case ListenNote2:
+        case ListenNote3:
+            p.line = QStringLiteral("(づ｡-‿‿-｡)づ"); // closed eyes, fixed front grid
+            p.notePhase = id - ListenNote0;
+            // A tiny sway, distinct from the note flight itself.
+            p.bodyDx = (p.notePhase % 2 == 0) ? -3 : 3;
+            break;
+        case StepLeft:
+            p.line = QStringLiteral("(づ｡>‿‿<｡)っ");
+            p.bodyDx = -9;
+            break;
+        case StepRight:
+            p.line = QStringLiteral("(っ｡>‿‿<｡)づ");
+            p.bodyDx = 9;
+            break;
         default: break;  // F00/H00 are the original reference pose
     }
     return p;
