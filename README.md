@@ -8,8 +8,8 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
-- **Animated pet:** idle expressions, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; closed-eye listening frames emit rising notes. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
-- **Desktop integration:** XFCE/X11 all-workspace hints (including reassertion after settings changes) and optional XDG autostart, with a right-click settings menu.
+- **Animated pet:** idle expressions, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music continuously emits rising vector notes (also during closed-eye listening). Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **Desktop integration:** XFCE/X11 all-workspace hints (including readback checks and stable window type after perspective calibration) and optional XDG autostart, with a right-click settings menu.
 
 **Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, clock-flicker frequency (0 = off, 100 = about every 4 seconds), and autonomous pet animation speed (50–180%, default 100). The pet speed controls idle/music only; typing stays at 115ms per frame. Font pickers list installed fonts and accept a typed family.
 
@@ -77,7 +77,7 @@ ctest --test-dir build --output-on-failure
 
 ## Development
 
-Pet frames, animation sequences, and rendering are separate modules. The music mode alternates a baseline 8-beat groove with one featured dance drawn from an 11-action shuffle bag (no repeated action until all 11 have played). Tempo follows a fixed frame clock rather than measuring musical beats. See [animation architecture](docs/ANIMATION_ARCHITECTURE.md) and the [approved animation catalog](docs/ANIMATION_CATALOG.md) before extending the pet.
+Pet frames, animation sequences, and rendering are separate modules. The music mode alternates a baseline 8-beat groove with one featured dance drawn from an 11-action shuffle bag (no repeated action until all 11 have completed, with no immediate repeat across shuffle cycles; typing replays any interrupted performance). Tempo follows a fixed frame clock rather than measuring musical beats. See [animation architecture](docs/ANIMATION_ARCHITECTURE.md) and the [approved animation catalog](docs/ANIMATION_CATALOG.md) before extending the pet.
 
 Session startup, X11 workspace behavior, and settings migration: [desktop integration](docs/DESKTOP_INTEGRATION.md).
 
