@@ -526,7 +526,8 @@ public:
         const bool moving = f.moveFrom != f.moveTo;
         const double y = moving ? -3.0*std::sin(std::numbers::pi*t) : 0.0;
         return {f.moveFrom + (f.moveTo - f.moveFrom) * t,
-                y, f.mirror, f.streak};
+                y, f.mirror, f.streak,
+                moving && (f.pose == IdleStepLeft || f.pose == IdleStepRight)};
     }
     [[nodiscard]] GiftVisual giftVisual(qint64 nowMs) const {
         if (activity_ != Activity::Idle || story_.isEmpty()) return {};
