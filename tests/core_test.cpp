@@ -46,9 +46,9 @@ int main() {
         require(p.line.size() == (p.back ? pet::kBackColumns : pet::kFrontColumns),
                 "unexpected pose column count");
         require(p.headDx >= -3 && p.headDx <= 3, "head moves too far");
-        require(p.headDy >= -3 && p.headDy <= 3, "head moves too far");
-        require(p.bodyDx >= -3 && p.bodyDx <= 3, "body moves too far");
-        require(p.bodyDy >= -3 && p.bodyDy <= 3, "body moves too far");
+        require(p.headDy >= -5 && p.headDy <= 5, "head moves too far");
+        require(p.bodyDx >= -9 && p.bodyDx <= 9, "body moves too far");
+        require(p.bodyDy >= -6 && p.bodyDy <= 6, "body moves too far");
         if (p.back) {
             require(id >= pet::B00 && id <= pet::B02, "unexpected backside pose");
             require(p.line.at(1) == QChar('(') &&
@@ -74,7 +74,28 @@ int main() {
 
     // Happy eyes drive the same tail animation in ANY story, not just a
     // handful of dedicated poses in Celebrate.
-    require(pet::kPoseCount == 39, "stable pose IDs must be preserved");
+    require(pet::kPoseCount == 45, "extended pose count");
+    require(pet::JoyTailLeft == 37 && pet::JoyTailRight == 38,
+            "historic pose IDs were renumbered");
+    require(pet::ListenNote0 == 39 && pet::StepRight == 44,
+            "new music poses must append after historic IDs");
+    require(pet::frame(pet::SwayLeft).bodyDx == -8 &&
+            pet::frame(pet::SwayRight).bodyDx == 8, "sway remains too subtle");
+    require(pet::frame(pet::BounceUp).bodyDy == -6 &&
+            pet::frame(pet::BounceDown).bodyDy == 6, "bounce remains too subtle");
+    require(pet::frame(pet::StepLeft).bodyDx == -9 &&
+            pet::frame(pet::StepRight).bodyDx == 9, "side step amplitude");
+    for (int id = pet::ListenNote0; id <= pet::ListenNote3; ++id) {
+        const pet::Pose p = pet::frame(id);
+        require(p.notePhase == id - pet::ListenNote0,
+                "notes must advance through fixed authored phases");
+        require(p.line == QStringLiteral("(づ｡-‿‿-｡)づ"),
+                "music listening eyes must remain closed");
+    }
+    require(pet::frame(pet::F00).notePhase == -1 &&
+            pet::frame(pet::T00).notePhase == -1,
+            "notes must be absent from idle and typing");
+
     require(pet::hasJoyfulEyes(pet::frame(pet::F04)), "happy eyes must wag");
     require(pet::hasJoyfulEyes(pet::frame(pet::F16)), "laughing eyes must wag");
     require(pet::hasJoyfulEyes(pet::frame(pet::H04)), "happy hand pose must wag");
@@ -126,13 +147,23 @@ int main() {
         require(story.back().pose == pet::F00 || story.back().pose == pet::H00,
                 "idle does not return to neutral");
     }
+    // Music stays at a single authored 280ms beat across the groove and
+    // every featured move. Changes to user speed scale the full timeline.
+    const auto groove = pet::musicGrooveStory();
+    require(groove.size() == 8 && pet::duration(groove) == 2240,
+            "continuous music groove needs eight even beats");
+    for (const auto &step : groove)
+        require(step.durationMs == pet::kMusicBeatMs,
+                "groove lost common cadence");
+    require(pet::kMusicActionCount == 11, "featured music set incomplete");
     for (int n = 0; n < pet::kMusicActionCount; ++n) {
         const auto story = pet::musicStory(static_cast<pet::MusicAction>(n));
         require(pet::duration(story) >= 3000, "music action too short");
         require(story.size() >= 4, "music action is too short to read");
         for (const auto &step : story)
             require(step.pose >= 0 && step.pose < pet::kPoseCount &&
-                    step.durationMs > 0, "invalid music frame");
+                    step.durationMs == pet::kMusicBeatMs,
+                    "music frames must keep a common beat");
         require(story.front().pose == pet::F00 || story.front().pose == pet::H00,
                 "music does not start with a neutral silhouette");
         require(story.back().pose == pet::F00 || story.back().pose == pet::H00,
@@ -151,6 +182,47 @@ int main() {
     }
     require(wagLeft && wagRight, "the old tail movement must be restored");
     require(pet::duration(pet::typingStory()) < 600, "typing must feel responsive");
+    for (const auto &step : pet::typingStory())
+        require(step.durationMs == 115, "typing timeline must remain unscaled");
+
+    // Real animator transition: continuous groove -> feature -> groove;
+    // scaling is independent of typing and can be adjusted live.
+    pet::Animator standard;
+    standard.advance(0, false, true);
+    require(standard.activity() == pet::Activity::Music &&
+            !standard.featuredMusic(), "music should start in baseline groove");
+    standard.advance(160, false, true);
+    require(standard.pose() == pet::F00, "default music beat too fast");
+    pet::Animator faster;
+    faster.setAutonomousSpeed(180, 0);
+    faster.advance(0, false, true);
+    faster.advance(160, false, true);
+    require(faster.pose() == pet::NodDown, "music speed slider has no effect");
+    faster.advance(180, true, true);
+    require(faster.pose() == pet::T00, "typing must interrupt fast music");
+    faster.advance(290, true, true);
+    require(faster.pose() == pet::T00, "typing speed must ignore the music slider");
+    faster.advance(300, true, true);
+    require(faster.pose() == pet::T01, "typing frame must retain its 115ms timing");
+    standard.setAutonomousSpeed(180, 160);
+    require(standard.autonomousSpeed() == 180, "live slider update missing");
+    standard.setAutonomousSpeed(999, 160);
+    require(standard.autonomousSpeed() == 180, "speed upper clamp missing");
+    standard.setAutonomousSpeed(0, 160);
+    require(standard.autonomousSpeed() == 50, "speed lower clamp missing");
+    pet::Animator fullMusic;
+    fullMusic.advance(0, false, true);
+    bool enteredFeature = false, returnedToGroove = false;
+    for (int ms = 40; ms <= 6500; ms += 40) {
+        fullMusic.advance(ms, false, true);
+        if (fullMusic.featuredMusic()) enteredFeature = true;
+        if (enteredFeature && !fullMusic.featuredMusic()) {
+            returnedToGroove = true;
+            break;
+        }
+    }
+    require(enteredFeature && returnedToGroove,
+            "music must alternate groove and featured performance");
 
     // ShuffleBag is not independent random drawing; every cycle covers all.
     for (const int count : {pet::kIdleActionCount, pet::kMusicActionCount}) {
