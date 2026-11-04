@@ -70,7 +70,7 @@ static void dumpProperty(Display *dpy, Window w, const char *name) {
             if (atomName) XFree(atomName);
         }
     }
-    std::cerr << "\\n";
+    std::cerr << '\n';
     if (data) XFree(data);
 }
 
@@ -78,7 +78,7 @@ static void dumpWindow(WId id) {
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) return;
     std::cerr << "window=" << std::hex << static_cast<unsigned long>(id)
-              << std::dec << "\\n";
+              << std::dec << '\n';
     dumpProperty(dpy, static_cast<Window>(id), "_NET_WM_DESKTOP");
     dumpProperty(dpy, static_cast<Window>(id), "_NET_WM_STATE");
     dumpProperty(dpy, DefaultRootWindow(dpy), "_NET_NUMBER_OF_DESKTOPS");
