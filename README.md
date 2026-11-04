@@ -8,7 +8,8 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
-- **Animated pet:** 14 idle stories with subtle breathing, a rare walk-away, fully vanish, and face-forward side-return story with five gift outcomes, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music emits a dense staggered three-column vector-note stream in the same strip as typing Matrix (also during closed-eye listening). Gift effects include flying stars, fading trails, a multiring burst with moving shards, and alternating sad tears. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **Animated pet:** 14 idle stories with subtle breathing, a rare walk-away, fully vanish, and face-forward left-to-right return story with five gift outcomes, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music emits a dense staggered three-column vector-note stream in the same strip as typing Matrix (also during closed-eye listening). Gift effects include slow flying stars with visible comet tails, lingering sadness, a multiring burst with moving shards, and alternating slow tears. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **Animation debugging:** a third context-menu entry opens 4 preview tabs covering 14 idle actions, baseline groove + 11 music dances, typing/Matrix, and 5 distinct gift endings. Autonomous speed, MPRIS and typing switches are grouped there. One-shot previews never consume shuffled action queues.
 - **Desktop integration:** XFCE/X11 all-workspace hints with a stable X11 window ID through calibration and real XFWM4 regression tests and optional XDG autostart, with a right-click settings menu.
 
 **Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, clock-flicker frequency (0 = off, 100 = about every 4 seconds), and autonomous pet animation speed (50–180%, default 100). The pet speed controls idle/music only; typing stays at 115ms per frame. Font pickers list installed fonts and accept a typed family.
@@ -41,7 +42,8 @@ publishes it. GitHub alone cannot publish packages to AUR.
 | Drag handle 9 | Move the whole overlay |
 | `Enter` / `Esc` (in calibration) | Save / cancel |
 | `B` / `F` (in calibration) | Background / frame |
-| `crt-clock --settings` or right-click | Appearance and animation settings |
+| `crt-clock --settings` or right-click → Настройки CRT | CRT appearance and font settings |
+| `crt-clock --animations` or right-click → Настройки анимации | Four tabs: all idle/music/typing/gift previews, speed and response toggles |
 | `crt-clock --quit` | Stop the widget |
 | `crt-clock --preview-gift=star` | Preview the flying star story |
 | `crt-clock --preview-gift=arc` | Preview the curved star flight |
@@ -67,10 +69,10 @@ git stash push -m "local PKGBUILD" -- PKGBUILD
 git pull --ff-only
 makepkg -Cfsi
 crt-clock --quit
-crt-clock >/dev/null 2>&1 &
+setsid -f crt-clock </dev/null >/dev/null 2>&1
 ```
 
-The `stash` step protects the local `PKGBUILD` version change that `makepkg` may leave behind. Restart the widget after installation (also after adding new system fonts); calibration and configuration are retained.
+The `stash` step protects the local `PKGBUILD` version change that `makepkg` may leave behind. Restart the widget after installation (also after adding new system fonts); calibration and configuration are retained. **Do not** run `crt-clock &` and close the terminal: a shell/terminal hangup can terminate the widget. `setsid -f` starts it in an independent session. For automatic startup, enable the XDG autostart checkbox in CRT Settings.
 
 A gift preview plays once in the **already running** widget through its
 single-instance IPC. It does not alter calibration/settings and does not need
@@ -96,3 +98,23 @@ Pet frames, animation sequences, and rendering are separate modules. The music m
 Session startup, X11 workspace behavior, and settings migration: [desktop integration](docs/DESKTOP_INTEGRATION.md).
 
 Real desktop screenshots will replace illustrative imagery when available. See the [capture checklist](docs/SCREENSHOT_PLAN.md).
+
+### Debug every authored animation
+
+Right-click the widget → **Настройки анимации** (or `crt-clock --animations`).
+The 4 tabs contain:
+
+- **Idle**: breathing + all 14 authored actions (including the rare Fetch).
+- **Music**: ordinary Groove + each of the 11 featured dances.
+- **Typing**: typing paws plus 11 synthetic Matrix glyphs, never the typed text.
+- **Gifts**: five separate endings, including slow flights, burst sadness and crying.
+
+Press **Воспроизвести** to play one complete scenario in the actual desktop
+widget. Press **Остановить предпросмотр** to stop. Previewing does not consume
+the idle/music/gift shuffle bags or change the saved calibration. The normal
+Typing > Music > Idle priority resumes automatically afterward. The settings
+dialog also contains the 50–180% autonomy speed slider and switches for
+MPRIS and typing response; Save persists them, Cancel reverts.
+
+In v0.6.1 the pet rests 50 pixels left of its former position to leave
+room for gifts; the perspective calibration and X11 window mode are unchanged.
