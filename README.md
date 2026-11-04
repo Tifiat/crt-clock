@@ -43,6 +43,11 @@ publishes it. GitHub alone cannot publish packages to AUR.
 | `B` / `F` (in calibration) | Background / frame |
 | `crt-clock --settings` or right-click | Appearance and animation settings |
 | `crt-clock --quit` | Stop the widget |
+| `crt-clock --preview-gift=star` | Preview the flying star story |
+| `crt-clock --preview-gift=arc` | Preview the curved star flight |
+| `crt-clock --preview-gift=pop` | Preview explosion, comic sadness and alternating tears |
+| `crt-clock --preview-gift=cry` | Preview stronger explosion and crying |
+| `crt-clock --preview-gift=pulse` | Preview pulsing gift and happy return |
 
 ### Perspective calibration
 
@@ -66,6 +71,11 @@ crt-clock >/dev/null 2>&1 &
 ```
 
 The `stash` step protects the local `PKGBUILD` version change that `makepkg` may leave behind. Restart the widget after installation (also after adding new system fonts); calibration and configuration are retained.
+
+A gift preview plays once in the **already running** widget through its
+single-instance IPC. It does not alter calibration/settings and does not need
+the rare `Fetch` idle shuffle to happen naturally. Typing can interrupt
+the preview; music resumes automatically afterwards.
 
 ## Build & test
 
