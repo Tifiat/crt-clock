@@ -15,7 +15,7 @@ constexpr int kFrontCellPixels = 31;
 constexpr int kBackCellPixels = 28;
 constexpr int kDefaultFontPixels = 43;
 constexpr int kDefaultStrokeStrength = 25;
-constexpr int kPoseCount = 45;
+constexpr int kPoseCount = 53;
 
 enum PoseId : int {
     F00 = 0, F01, F02, F03, F04, F05, F06, F07, F08, F09,
@@ -27,7 +27,10 @@ enum PoseId : int {
     JoyTailLeft, JoyTailRight,
     // New IDs append only: the 39 historic pose values never change.
     ListenNote0, ListenNote1, ListenNote2, ListenNote3,
-    StepLeft, StepRight
+    StepLeft, StepRight,
+    // Rare idle wandering/fetch actions; historic IDs remain unchanged.
+    IdleStepLeft, IdleStepRight, AwayFace, AwayNear, AwayFar,
+    AwayTiny, AwayReturn, GiftReturn
 };
 
 struct Pose {
@@ -38,7 +41,10 @@ struct Pose {
     int headDy = 0;
     int bodyDx = 0;
     int bodyDy = 0;
-    int notePhase = -1; // -1 = no notes; 0..3 = authored upward flight
+    int notePhase = -1; // old listening metadata, no longer drives music notes
+    double retreatScale = 1.0; // only for the authored idle 'fetch' story
+    int retreatDx = 0;
+    bool carriesGift = false;
 };
 
 // All front-facing frames occupy exactly ten fixed columns. Historical
@@ -101,6 +107,38 @@ inline Pose frame(int id) {
         case StepRight:
             p.line = QStringLiteral("(っ｡>‿‿<｡)づ");
             p.bodyDx = 9;
+            break;
+        case IdleStepLeft:
+            p.line = QStringLiteral("(っ｡◕‿‿◕｡)づ");
+            p.bodyDx = -9;
+            break;
+        case IdleStepRight:
+            p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");
+            p.bodyDx = 9;
+            break;
+        case AwayFace:
+        case AwayNear:
+        case AwayFar:
+        case AwayTiny:
+        case AwayReturn:
+            // Authored rear-facing departure/return. B00-B02 remain
+            // exclusively the historic music tail-wag poses.
+            p.line = QStringLiteral("ᕦ(   ◦   )ᕤ");
+            p.back = true;
+            if (id == AwayNear || id == AwayReturn) {
+                p.retreatScale = 0.80;
+                p.retreatDx = -16;
+            } else if (id == AwayFar) {
+                p.retreatScale = 0.58;
+                p.retreatDx = -32;
+            } else if (id == AwayTiny) {
+                p.retreatScale = 0.38;
+                p.retreatDx = -45;
+            }
+            break;
+        case GiftReturn:
+            p.line = QStringLiteral("(づ｡◕‿‿◕｡)っ");
+            p.carriesGift = true;
             break;
         default: break;  // F00/H00 are the original reference pose
     }
