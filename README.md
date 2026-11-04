@@ -155,8 +155,9 @@ room for gifts; the perspective calibration and X11 window mode are unchanged.
 ## v0.6.3 — Rebalanced scenes and CPU optimization
 
 - Idle: Peek now turns both eyes aside **once**, then holds before returning.
-  Shy and Indignant each have one coherent expression instead of repeatedly
-  switching the eyes. The original blink is unchanged.
+  Shy uses one held bashful face with temporary cheek blush and a
+  subtle bowed-head bob, while Indignant shows one angry look. Neither
+  repeatedly switches its eyes. The original blink is unchanged.
   Added `WinkLeftRight`: one left-eye wink and one right-eye wink, only in
   Idle, never during music.
 - Music: remove `LookToBeat` and `WinkGroove`. Nine unique featured
