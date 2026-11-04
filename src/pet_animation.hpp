@@ -37,6 +37,7 @@ struct Frame {
     bool mirror = false;
     int streak = 0;
     bool absoluteDuration = false; // hold/read emotion; speed affects gestures
+    int carryDx = 0; // carried gift offset while entering the canvas
 };
 
 // Eyegaze and sleep need a readable minimum independent of fast limb tempo.
@@ -68,6 +69,12 @@ inline int duration(const Story &story) {
     return sum;
 }
 
+inline Frame carrying(int pose, int ms, int bodyOffset) {
+    Frame f{pose, ms, GiftCue::Carry};
+    f.carryDx = bodyOffset;
+    return f;
+}
+
 // One deliberate idle mini-story with five independent endings.
 // The departure ends in a genuinely invisible frame; returning from the
 // RIGHT uses regular front-facing glyphs at full size, not the rear silhouette.
@@ -75,48 +82,53 @@ inline Story fetchStory(GiftKind kind) {
     Story story = {
         {F00, 750}, {IdleStepLeft, 650}, {AwayFace, 730},
         {AwayNear, 680}, {AwayFar, 650}, {AwayTiny, 600},
-        // The gap is a deliberate pause, not a nearly instant reversal.
-        {AwayGone, 3300},
-        {ReturnPeek, 700}, {ReturnSide, 700},
-        {ReturnApproach, 750}, {ReturnCenter, 650},
-        {ReturnCenter, 1100, GiftCue::Present}
+        {AwayGone, 3300}, // visibly absent before reappearing
+        // The gift is already IN HIS HAND as he enters from the left.
+        carrying(ReturnPeek, 700, -200),
+        carrying(ReturnSide, 700, -125),
+        carrying(ReturnApproach, 750, -55),
+        carrying(ReturnCenter, 750, 0),
+        hold(ReturnCenter, 1300, GiftCue::Present)
     };
     switch (kind) {
         case GiftKind::StarFly:
-            story += Story{{F02, 4400, GiftCue::FlyStraight},
-                           {SadSoft, 1900}, {F13, 950}, {F00, 1050}};
+            story += Story{hold(H01, 1600, GiftCue::Transfer),
+                           hold(F02, 5400, GiftCue::FlyStraight),
+                           hold(SadSoft, 2200),hold(F13, 1000),
+                           {F00, 1100}};
             break;
         case GiftKind::ArcFly:
-            story += Story{{F02, 4600, GiftCue::FlyArc},
-                           {SadSoft, 2150}, {F13, 1050}, {F00, 1100}};
+            story += Story{hold(H01, 1650, GiftCue::Transfer),
+                           hold(F02, 5650, GiftCue::FlyArc),
+                           hold(SadSoft, 2300),hold(F13, 1100),
+                           {F00, 1150}};
             break;
         case GiftKind::Pulse:
-            story += Story{{F04, 2400, GiftCue::Pulse},
-                           {F17, 1250}, {F00, 1100}};
+            story += Story{hold(F04, 5100, GiftCue::Pulse),
+                           hold(F17, 2000), {F00, 1100}};
             break;
         case GiftKind::BurstSad:
-            story += Story{{ReturnCenter, 1550, GiftCue::Charge},
-                           {F05, 1600, GiftCue::Burst},
-                           // No sudden eye-opening between tears and idle:
-                           // hold sorrow, relax to a soft frown, close sleepy
-                           // eyes, then settle back into ordinary breathing.
-                           {SadComic, 1750},
-                           {SadComic, 1200, GiftCue::TearLeft},
-                           {SadComic, 1200, GiftCue::TearRight},
-                           {SadComic, 1200, GiftCue::TearLeft},
-                           {SadComic, 1800},
-                           {SadSoft, 1700}, {F13, 1100}, {F00, 1250}};
+            story += Story{hold(ReturnCenter, 1700, GiftCue::Charge),
+                           hold(F05, 1700, GiftCue::Burst),
+                           hold(SadComic, 1950),
+                           hold(SadComic, 1350, GiftCue::TearLeft),
+                           hold(SadComic, 1350, GiftCue::TearRight),
+                           hold(SadComic, 1350, GiftCue::TearLeft),
+                           hold(SadComic, 2100),
+                           hold(SadSoft, 1900),hold(F13, 1200),
+                           {F00, 1300}};
             break;
         case GiftKind::BurstCry:
-            story += Story{{ReturnCenter, 1600, GiftCue::Charge},
-                           {F05, 1750, GiftCue::Burst},
-                           {SadCry, 1900},
-                           {SadCry, 1250, GiftCue::TearLeft},
-                           {SadCry, 1250, GiftCue::TearRight},
-                           {SadCry, 1250, GiftCue::TearLeft},
-                           {SadCry, 1250, GiftCue::TearRight},
-                           {SadCry, 2000},
-                           {SadSoft, 1800}, {F13, 1200}, {F00, 1350}};
+            story += Story{hold(ReturnCenter, 1700, GiftCue::Charge),
+                           hold(F05, 1850, GiftCue::Burst),
+                           hold(SadCry, 2150),
+                           hold(SadCry, 1450, GiftCue::TearLeft),
+                           hold(SadCry, 1450, GiftCue::TearRight),
+                           hold(SadCry, 1450, GiftCue::TearLeft),
+                           hold(SadCry, 1450, GiftCue::TearRight),
+                           hold(SadCry, 2300),
+                           hold(SadSoft, 1950),hold(F13, 1350),
+                           {F00, 1350}};
             break;
     }
     return story;
@@ -497,7 +509,8 @@ public:
         if (frame.cue == GiftCue::Inactive) return {};
         const int ms = frameDuration(frame);
         return {frame.cue, giftKind_,
-                std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0)};
+                std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0),
+                frame.carryDx};
     }
     [[nodiscard]] int autonomousSpeed() const { return speed_; }
     [[nodiscard]] bool featuredMusic() const {
