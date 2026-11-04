@@ -4,6 +4,8 @@
 #include "pet_tail.hpp"
 #include <QFont>
 #include <QPainter>
+#include <QPainterPath>
+#include <QPen>
 #include <QRectF>
 #include <algorithm>
 
@@ -60,23 +62,6 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
                        Qt::AlignCenter | Qt::TextSingleLine, letter);
     }
 
-    // Only the four authored listening frames emit two musical notes.
-    // This is a separate fixed-position overlay above the pet, not an
-    // 11th/12th glyph cell. Phase moves notes upward within the free row.
-    if (!pose.back && pose.notePhase >= 0) {
-        p.save();
-        QFont notesFont(font);
-        notesFont.setPixelSize(22);
-        notesFont.setWeight(QFont::Medium);
-        p.setFont(notesFont);
-        const qreal rise = pose.notePhase * 7.0;
-        p.drawText(QRectF(area.center().x() + 30, area.top() + 6 - rise, 30, 29),
-                   Qt::AlignCenter | Qt::TextSingleLine, QStringLiteral("♪"));
-        p.drawText(QRectF(area.center().x() + 93, area.top() + 16 - rise, 32, 29),
-                   Qt::AlignCenter | Qt::TextSingleLine, QStringLiteral("♫"));
-        p.restore();
-    }
-
     // The joyful dot is attached to the body, between the closing bracket
     // and right paw, NOT beyond the paw as it was in v0.5.1.
     if (!pose.back && tail.visible()) {
@@ -90,4 +75,37 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
         p.restore();
     }
 }
+    
+// Notes are a music-only decorative overlay, independent of featured pose.
+// Draw simple vector quavers: no reliance on font glyph fallback or text
+// metrics, no new character cells, no overlap with Matrix's right columns.
+// phase < 0 suppresses music notes completely (idle and typing).
+inline void paintMusicNotes(QPainter &p, const QRectF &area,
+                            QColor color, int phase) {
+    if (phase < 0) return;
+    phase %= 8;
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+    color.setAlphaF(color.alphaF() * 0.85);
+    p.setPen(QPen(color, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setBrush(color);
+
+    auto quaver = [&p](qreal x, qreal y) {
+        p.drawEllipse(QRectF(x - 4, y + 12, 8, 6));
+        p.drawLine(QPointF(x + 4, y + 15), QPointF(x + 4, y - 1));
+        QPainterPath flag;
+        flag.moveTo(x + 4, y - 1);
+        flag.cubicTo(x + 15, y + 1, x + 14, y + 9, x + 7, y + 10);
+        p.setBrush(Qt::NoBrush);
+        p.drawPath(flag);
+        p.setBrush(p.pen().color());
+    };
+
+    // Two staggered upward flights loop continuously while MPRIS is Playing.
+    // They use the short clear strip just above the pet, not the date cells.
+    quaver(area.center().x() + 32, area.top() + 5 - (phase % 4) * 5);
+    quaver(area.center().x() + 92, area.top() + 11 - ((phase + 2) % 4) * 5);
+    p.restore();
+}
+
 } // namespace pet
