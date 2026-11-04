@@ -11,6 +11,7 @@
 #include "pet_animation.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "pet_gift_render.hpp"
 #include "pet_tail.hpp"
 #include "crt_style.hpp"
 #include "matrix_rain.hpp"
@@ -47,7 +48,11 @@ int main() {
                 "unexpected pose column count");
         require(p.headDx >= -3 && p.headDx <= 3, "head moves too far");
         require(p.headDy >= -5 && p.headDy <= 5, "head moves too far");
-        require(p.bodyDx >= -9 && p.bodyDx <= 9, "body moves too far");
+        if (id >= pet::ReturnPeek && id <= pet::ReturnApproach)
+            require(p.bodyDx >= 70 && p.bodyDx <= 240,
+                    "front-facing side entrance must approach from right");
+        else
+            require(p.bodyDx >= -9 && p.bodyDx <= 9, "body moves too far");
         require(p.bodyDy >= -6 && p.bodyDy <= 6, "body moves too far");
         if (p.back) {
             const bool historicMusicBack = id >= pet::B00 && id <= pet::B02;
@@ -79,7 +84,7 @@ int main() {
 
     // Happy eyes drive the same tail animation in ANY story, not just a
     // handful of dedicated poses in Celebrate.
-    require(pet::kPoseCount == 53, "extended pose count");
+    require(pet::kPoseCount == 62, "extended pose count");
     require(pet::JoyTailLeft == 37 && pet::JoyTailRight == 38,
             "historic pose IDs were renumbered");
     require(pet::ListenNote0 == 39 && pet::StepRight == 44,
@@ -112,7 +117,23 @@ int main() {
             pet::frame(pet::AwayFar).retreatScale,
             "rare idle retreat should shrink as pet walks away");
     require(pet::frame(pet::GiftReturn).carriesGift,
-            "rare idle fetch must end with a small gift");
+            "historic idle gift pose must remain available");
+    require(pet::AwayGone == 53 && pet::SadAngry == 61,
+            "gift-specific pose IDs must append after existing set");
+    require(pet::frame(pet::AwayGone).hidden,
+            "pet must fully disappear between departure and side return");
+    for (int id = pet::ReturnPeek; id <= pet::ReturnCenter; ++id)
+        require(!pet::frame(id).back,
+                "returning pet must face the viewer, never return backside");
+    require(pet::frame(pet::SadComic).eyeDy <= -4 &&
+            pet::frame(pet::SadComic).mouthDy >= 4,
+            "comic sad eyes must be higher and mouth lower");
+    require(pet::frame(pet::SadCry).eyeDy < 0 &&
+            pet::frame(pet::SadCry).mouthDy > 0,
+            "crying expression must remain legible");
+    require(!pet::hasJoyfulEyes(pet::frame(pet::SadComic)) &&
+            !pet::hasJoyfulEyes(pet::frame(pet::SadCry)),
+            "sad expressions must not trigger joyful tail");
     require(pet::frame(pet::F00).retreatScale == 1.0 &&
             !pet::frame(pet::F00).carriesGift,
             "normal idle silhouette must keep original grid and size");
@@ -154,16 +175,57 @@ int main() {
     require(pet::duration(patrol) >= 4500 && pet::duration(fetch) >= 7000,
             "rare idle stories should be recognizable complete actions");
     bool leftStep = false, rightStep = false, gift = false, farAway = false;
+    bool vanished = false, returnsFront = false;
     for (const auto &step : patrol) {
         leftStep |= step.pose == pet::IdleStepLeft;
         rightStep |= step.pose == pet::IdleStepRight;
     }
     for (const auto &step : fetch) {
-        gift |= step.pose == pet::GiftReturn;
+        gift |= step.cue == pet::GiftCue::Present;
         farAway |= step.pose == pet::AwayTiny;
+        vanished |= step.pose == pet::AwayGone && step.durationMs >= 1000;
+        returnsFront |= step.pose == pet::ReturnPeek;
     }
-    require(leftStep && rightStep && gift && farAway,
-            "idle wandering and return-with-gift stages incomplete");
+    require(leftStep && rightStep && gift && farAway && vanished && returnsFront,
+            "idle story must depart, disappear, return facing front and show gift");
+    // Every gift has its own complete ending. Explosion branches alternate
+    // falling tears from different eyes, then pass through anger/recovery.
+    for (int kind = 0; kind < pet::kGiftKindCount; ++kind) {
+        const auto variant = static_cast<pet::GiftKind>(kind);
+        const auto story = pet::fetchStory(variant);
+        int vanishAt = -1, returnAt = -1, presentAt = -1;
+        int tears = 0, bursts = 0, softSad = 0, angry = 0;
+        pet::GiftCue lastTear = pet::GiftCue::None;
+        for (int i = 0; i < story.size(); ++i) {
+            const auto &step = story[i];
+            if (step.pose == pet::AwayGone) vanishAt = i;
+            if (step.pose == pet::ReturnPeek) returnAt = i;
+            if (step.cue == pet::GiftCue::Present) presentAt = i;
+            if (step.cue == pet::GiftCue::Burst) ++bursts;
+            if (step.pose == pet::SadSoft) ++softSad;
+            if (step.pose == pet::SadAngry) ++angry;
+            if (step.cue == pet::GiftCue::TearLeft ||
+                step.cue == pet::GiftCue::TearRight) {
+                require(lastTear != step.cue,
+                        "tears must alternate between left and right");
+                lastTear = step.cue;
+                ++tears;
+            }
+            if (returnAt >= 0 && i >= returnAt)
+                require(!pet::frame(step.pose).back,
+                        "all post-return poses must face forward");
+        }
+        require(vanishAt >= 0 && vanishAt < returnAt &&
+                returnAt < presentAt && story.back().pose == pet::F00,
+                "gift story timeline/neutral exit invalid");
+        if (pet::isBurst(variant))
+            require(bursts == 1 && tears >= 3 && angry >= 1,
+                    "burst must cause visible blast, alternating tears and recovery");
+        else if (variant != pet::GiftKind::Pulse)
+            require(softSad > 0, "flying gift should get mild sad reaction");
+        else require(bursts == 0 && tears == 0,
+                     "pulse gift should stay happy");
+    }
 
     // 0 is slow, 100 is fast. Static scanlines do not use this duration.
     require(perspective::sweepDurationMs(0) == 5000, "slow sweep");
@@ -276,19 +338,24 @@ int main() {
     require(enteredFeature && returnedToGroove,
             "music must alternate groove and featured performance");
 
-    // Idle ambient marks run only during the gap between authored stories.
+    // Idle breathing persists in the quiet gap and in long stationary
+    // expressions, but is suppressed by moving/gift cues or typing/music.
     pet::Animator ambient;
     ambient.advance(0, false, false);
-    require(ambient.idleResting(), "quiet idle should breathe between actions");
+    require(ambient.idleResting() && ambient.idleBreathing(),
+            "quiet idle should breathe between actions");
     ambient.advance(9000, false, false);
-    require(!ambient.idleResting(), "idle story should suppress ambient marks");
+    require(!ambient.idleResting(), "idle story must start after quiet gap");
+    require(ambient.idleBreathing(),
+            "idle should still breathe during a long stationary story frame");
     ambient.advance(9040, true, false);
-    require(!ambient.idleResting(), "typing must suppress idle ambient marks");
+    require(!ambient.idleBreathing(), "typing must suppress breathing");
     ambient.advance(9080, false, true);
-    require(!ambient.idleResting(), "music must suppress idle ambient marks");
+    require(!ambient.idleBreathing(), "music must suppress idle breathing");
 
     // ShuffleBag is not independent random drawing; every cycle covers all.
-    for (const int count : {pet::kIdleActionCount, pet::kMusicActionCount}) {
+    for (const int count : {pet::kIdleActionCount, pet::kMusicActionCount,
+                             pet::kGiftKindCount}) {
         pet::ShuffleBag bag(count);
         int lastAction = -1;
         for (int cycle = 0; cycle < 25; ++cycle) {
@@ -356,57 +423,85 @@ int main() {
     require(resumedAction == interruptedAction,
             "interrupted featured action must be replayed before advancing bag");
 
-    // Notes are ALWAYS offered by the active music mode, independently
-    // of EyesClosedNotes being selected. They use vector geometry with
-    // no dependency on any installed musical-note font.
-    const QRectF notesArea(10, 217, 460, 82);
-    for (int phase = 0; phase < 8; ++phase) {
+    // Music is a dense vertical stream within Matrix's former right-hand
+    // strip. Notes are vector strokes and vanish toward the clock above.
+    for (int phase : {0, 4, 8, 15, 27, 41}) {
         QImage image(480, 320, QImage::Format_ARGB32_Premultiplied);
         image.fill(Qt::transparent);
         {
             QPainter painter(&image);
-            pet::paintMusicNotes(painter, notesArea, QColor("#88FF88"), phase);
+            pet::paintMusicStream(painter, QColor("#88FF88"), phase);
         }
-        int visiblePixels = 0;
-        for (int y = 190; y < 245; ++y)
-            for (int x = 90; x < 380; ++x)
-                if (image.pixelColor(x, y).alpha() > 0) ++visiblePixels;
-        require(visiblePixels > 180,
-                "background music notes should appear at every music phase");
+        int pixels = 0;
+        int columns[3] = {0, 0, 0};
+        for (int y = 54; y < 310; ++y)
+            for (int x = 378; x < 465; ++x)
+                if (image.pixelColor(x, y).alpha() > 0) {
+                    ++pixels;
+                    if (x < 402) ++columns[0];
+                    else if (x < 426) ++columns[1];
+                    else ++columns[2];
+                }
+        require(pixels > 200 && columns[0] > 15 &&
+                columns[1] > 15 && columns[2] > 15,
+                "dense musical stream must populate three staggered columns");
+        for (int y = 55; y < 310; ++y)
+            for (int x = 0; x < 374; ++x)
+                require(image.pixelColor(x, y).alpha() == 0,
+                        "music must not draw notes above pet's head");
     }
     QImage silent(480, 320, QImage::Format_ARGB32_Premultiplied);
     silent.fill(Qt::transparent);
     {
         QPainter painter(&silent);
-        pet::paintMusicNotes(painter, notesArea, QColor("#88FF88"), -1);
+        pet::paintMusicStream(painter, QColor("#88FF88"), -1);
     }
-    for (int y = 193; y < 245; ++y)
-        for (int x = 260; x < 390; ++x)
+    for (int y = 55; y < 310; ++y)
+        for (int x = 378; x < 465; ++x)
             require(silent.pixelColor(x, y).alpha() == 0,
-                    "notes should be hidden during idle and typing");
+                    "music stream must disappear while typing/idle");
 
-    // The idle base remains visibly alive even between full idle actions:
-    // a sparse low-alpha vector mark changes with phase, with no typing input.
-    QImage idleMark(480, 320, QImage::Format_ARGB32_Premultiplied);
-    idleMark.fill(Qt::transparent);
-    {
-        QPainter painter(&idleMark);
-        pet::paintIdleMarks(painter, notesArea, QColor("#88FF88"), 5);
+    // Burst visuals must be much more than a single star, and the physical
+    // spark/trail layer must disappear outside gift cues.
+    for (pet::GiftKind kind : {pet::GiftKind::BurstSad,
+                               pet::GiftKind::BurstCry}) {
+        QImage blast(480, 320, QImage::Format_ARGB32_Premultiplied);
+        blast.fill(Qt::transparent);
+        {
+            QPainter painter(&blast);
+            pet::paintGiftEffect(painter, {pet::GiftCue::Burst, kind, .42},
+                                 QColor("#88FF88"));
+        }
+        int count = 0;
+        for (int y = 120; y < 319; ++y)
+            for (int x = 285; x < 480; ++x)
+                if (blast.pixelColor(x, y).alpha() > 0) ++count;
+        require(count > 200, "burst must have a dense expanding ring and shards");
     }
-    int markPixels = 0;
-    for (int y = 215; y < 275; ++y)
-        for (int x = 50; x < 435; ++x)
-            if (idleMark.pixelColor(x, y).alpha() > 0) ++markPixels;
-    require(markPixels > 10, "idle breathing marks should be visible");
-    idleMark.fill(Qt::transparent);
-    {
-        QPainter painter(&idleMark);
-        pet::paintIdleMarks(painter, notesArea, QColor("#88FF88"), -1);
+    for (auto cue : {pet::GiftCue::FlyStraight, pet::GiftCue::FlyArc,
+                     pet::GiftCue::TearLeft, pet::GiftCue::TearRight,
+                     pet::GiftCue::Pulse, pet::GiftCue::Charge}) {
+        QImage effect(480, 320, QImage::Format_ARGB32_Premultiplied);
+        effect.fill(Qt::transparent);
+        {
+            QPainter painter(&effect);
+            pet::paintGiftEffect(painter,
+                {cue, pet::GiftKind::BurstCry, .38}, QColor("#88FF88"));
+        }
+        int count = 0;
+        for (int y = 80; y < 320; ++y)
+            for (int x = 130; x < 480; ++x)
+                if (effect.pixelColor(x, y).alpha() > 0) ++count;
+        require(count > 4, "gift effects must render at intermediate progress");
     }
-    for (int y = 215; y < 275; ++y)
-        for (int x = 50; x < 435; ++x)
-            require(idleMark.pixelColor(x, y).alpha() == 0,
-                    "idle marks must switch off during typing or music");
+    QImage noGift(480, 320, QImage::Format_ARGB32_Premultiplied);
+    noGift.fill(Qt::transparent);
+    {
+        QPainter painter(&noGift);
+        pet::paintGiftEffect(painter, {}, QColor("#88FF88"));
+    }
+    require(noGift.pixelColor(392, 247).alpha() == 0,
+            "gift renderer must do nothing when cue is None");
 
     // Matrix input has no key values and produces two independently rising
     // columns without changing the pet renderer or changing fonts.
