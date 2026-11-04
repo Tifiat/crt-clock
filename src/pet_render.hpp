@@ -155,17 +155,20 @@ inline void paintGestureStreak(QPainter &p, const QRectF &area,
 // No font glyph is sampled; every note is built from simple vector strokes.
 inline void paintMusicStream(QPainter &p, QColor color, int phase) {
     if (phase < 0) return;
-    const qreal offset = std::fmod(phase * 2.4, 18.0);
+    const qreal offset = std::fmod(phase * 2.2, 22.0);
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
+    // The date is drawn at y=154..206. Music must live in the pet's
+    // bottom-right strip, not rise through the clock or above the date.
+    p.setClipRect(QRectF(376, 215, 98, 105));
 
     for (int column = 0; column < 3; ++column) {
-        for (int row = 0; row < 19; ++row) {
+        for (int row = 0; row < 6; ++row) {
             const qreal x = 390 + 23 * column;
-            const qreal y = 308 - 18 * row - offset - (column % 2 ? 9 : 0);
-            if (y < 54 || y > 314) continue;
-            const qreal appear = std::clamp((314.0 - y) / 22.0, 0.0, 1.0);
-            const qreal vanish = std::clamp((y - 54.0) / 75.0, 0.0, 1.0);
+            const qreal y = 312 - 22 * row - offset - (column % 2 ? 11 : 0);
+            if (y < 226 || y > 317) continue;
+            const qreal appear = std::clamp((313.0 - y) / 16.0, 0.0, 1.0);
+            const qreal vanish = std::clamp((y - 222.0) / 43.0, 0.0, 1.0);
             const qreal variation = 0.74 + .26 * ((row * 7 + column * 3) % 5) / 4.0;
             QColor ink = color;
             ink.setAlphaF(color.alphaF() * .73 * appear * vanish * variation);
