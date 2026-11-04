@@ -50,10 +50,15 @@ int main() {
         require(p.bodyDx >= -9 && p.bodyDx <= 9, "body moves too far");
         require(p.bodyDy >= -6 && p.bodyDy <= 6, "body moves too far");
         if (p.back) {
-            require(id >= pet::B00 && id <= pet::B02, "unexpected backside pose");
+            const bool historicMusicBack = id >= pet::B00 && id <= pet::B02;
+            const bool rareIdleBack = id >= pet::AwayFace && id <= pet::AwayReturn;
+            require(historicMusicBack || rareIdleBack, "unexpected backside pose");
             require(p.line.at(1) == QChar('(') &&
                     p.line.at(9) == QChar(')'), "backside body geometry changed");
-            require(p.line.contains(QStringLiteral("●")), "backside tail missing");
+            if (historicMusicBack)
+                require(p.line.contains(QStringLiteral("●")), "historic backside tail missing");
+            else
+                require(p.line.contains(QStringLiteral("◦")), "idle departure has no rear silhouette");
         } else {
             require(p.line.at(0) == QChar('('), "left front anchor moved");
             require(p.line.at(2) == QChar(0xFF61), "left cheek moved");
@@ -74,7 +79,7 @@ int main() {
 
     // Happy eyes drive the same tail animation in ANY story, not just a
     // handful of dedicated poses in Celebrate.
-    require(pet::kPoseCount == 45, "extended pose count");
+    require(pet::kPoseCount == 53, "extended pose count");
     require(pet::JoyTailLeft == 37 && pet::JoyTailRight == 38,
             "historic pose IDs were renumbered");
     require(pet::ListenNote0 == 39 && pet::StepRight == 44,
@@ -95,6 +100,22 @@ int main() {
     require(pet::frame(pet::F00).notePhase == -1 &&
             pet::frame(pet::T00).notePhase == -1,
             "notes must be absent from idle and typing");
+    require(pet::IdleStepLeft == 45 && pet::GiftReturn == 52,
+            "idle-only pose IDs must append without renumbering old dances");
+    for (int id = pet::AwayFace; id <= pet::AwayReturn; ++id)
+        require(pet::frame(id).back, "idle fetch retreat lost backside orientation");
+    require(pet::frame(pet::AwayNear).retreatScale <
+            pet::frame(pet::AwayFace).retreatScale &&
+            pet::frame(pet::AwayFar).retreatScale <
+            pet::frame(pet::AwayNear).retreatScale &&
+            pet::frame(pet::AwayTiny).retreatScale <
+            pet::frame(pet::AwayFar).retreatScale,
+            "rare idle retreat should shrink as pet walks away");
+    require(pet::frame(pet::GiftReturn).carriesGift,
+            "rare idle fetch must end with a small gift");
+    require(pet::frame(pet::F00).retreatScale == 1.0 &&
+            !pet::frame(pet::F00).carriesGift,
+            "normal idle silhouette must keep original grid and size");
 
     require(pet::hasJoyfulEyes(pet::frame(pet::F04)), "happy eyes must wag");
     require(pet::hasJoyfulEyes(pet::frame(pet::F16)), "laughing eyes must wag");
@@ -126,6 +147,23 @@ int main() {
     require(celebration.size() == 5, "celebration should have five clear steps");
     require(celebration[1].pose == pet::F04 &&
             celebration[1].durationMs == 1650, "celebration happy hold missing");
+
+    require(pet::kIdleActionCount == 14, "new idle patrol/fetch actions missing");
+    const auto patrol = pet::idleStory(pet::IdleAction::Patrol);
+    const auto fetch = pet::idleStory(pet::IdleAction::Fetch);
+    require(pet::duration(patrol) >= 4500 && pet::duration(fetch) >= 7000,
+            "rare idle stories should be recognizable complete actions");
+    bool leftStep = false, rightStep = false, gift = false, farAway = false;
+    for (const auto &step : patrol) {
+        leftStep |= step.pose == pet::IdleStepLeft;
+        rightStep |= step.pose == pet::IdleStepRight;
+    }
+    for (const auto &step : fetch) {
+        gift |= step.pose == pet::GiftReturn;
+        farAway |= step.pose == pet::AwayTiny;
+    }
+    require(leftStep && rightStep && gift && farAway,
+            "idle wandering and return-with-gift stages incomplete");
 
     // 0 is slow, 100 is fast. Static scanlines do not use this duration.
     require(perspective::sweepDurationMs(0) == 5000, "slow sweep");
@@ -159,6 +197,17 @@ int main() {
                 "rapid alternate mouth shapes should not appear in baseline groove");
     }
     require(pet::kMusicActionCount == 11, "featured music set incomplete");
+    for (const auto action : {pet::MusicAction::LookToBeat,
+                              pet::MusicAction::WinkGroove}) {
+        const auto story = pet::musicStory(action);
+        for (int i = 1; i < story.size(); ++i) {
+            if (story[i].pose == pet::F09 || story[i].pose == pet::F10)
+                require(story[i-1].pose == story[i].pose ||
+                        (i+1 < story.size() &&
+                         story[i+1].pose == story[i].pose),
+                        "musical winks should be held at least two beats");
+        }
+    }
     for (int n = 0; n < pet::kMusicActionCount; ++n) {
         const auto story = pet::musicStory(static_cast<pet::MusicAction>(n));
         require(pet::duration(story) >= 3000, "music action too short");
@@ -308,10 +357,10 @@ int main() {
             pet::paintMusicNotes(painter, notesArea, QColor("#88FF88"), phase);
         }
         int visiblePixels = 0;
-        for (int y = 193; y < 245; ++y)
-            for (int x = 260; x < 390; ++x)
+        for (int y = 190; y < 245; ++y)
+            for (int x = 90; x < 380; ++x)
                 if (image.pixelColor(x, y).alpha() > 0) ++visiblePixels;
-        require(visiblePixels > 40,
+        require(visiblePixels > 180,
                 "background music notes should appear at every music phase");
     }
     QImage silent(480, 320, QImage::Format_ARGB32_Premultiplied);
@@ -324,6 +373,29 @@ int main() {
         for (int x = 260; x < 390; ++x)
             require(silent.pixelColor(x, y).alpha() == 0,
                     "notes should be hidden during idle and typing");
+
+    // The idle base remains visibly alive even between full idle actions:
+    // a sparse low-alpha vector mark changes with phase, with no typing input.
+    QImage idleMark(480, 320, QImage::Format_ARGB32_Premultiplied);
+    idleMark.fill(Qt::transparent);
+    {
+        QPainter painter(&idleMark);
+        pet::paintIdleMarks(painter, notesArea, QColor("#88FF88"), 5);
+    }
+    int markPixels = 0;
+    for (int y = 215; y < 275; ++y)
+        for (int x = 50; x < 435; ++x)
+            if (idleMark.pixelColor(x, y).alpha() > 0) ++markPixels;
+    require(markPixels > 10, "idle breathing marks should be visible");
+    idleMark.fill(Qt::transparent);
+    {
+        QPainter painter(&idleMark);
+        pet::paintIdleMarks(painter, notesArea, QColor("#88FF88"), -1);
+    }
+    for (int y = 215; y < 275; ++y)
+        for (int x = 50; x < 435; ++x)
+            require(idleMark.pixelColor(x, y).alpha() == 0,
+                    "idle marks must switch off during typing or music");
 
     // Matrix input has no key values and produces two independently rising
     // columns without changing the pet renderer or changing fonts.
@@ -409,20 +481,17 @@ int main() {
             "first workspace must not pass all-workspaces check");
     require(!desktop::isAllDesktopsValue(1UL),
             "second workspace must not pass all-workspaces check");
-    // Calibration must keep the same ordinary top-level X11 window type as
-    // display mode; changing Qt::Tool to a normal window during a remap can
-    // cause XFWM4 to tie the recreated native window to one workspace.
-    const auto displayFlags = desktop::widgetWindowFlags(false);
-    const auto editFlags = desktop::widgetWindowFlags(true);
-    require((displayFlags & Qt::WindowType_Mask) == Qt::Window &&
-            (editFlags & Qt::WindowType_Mask) == Qt::Window,
-            "widget must remain a normal top-level window in both modes");
-    require(displayFlags.testFlag(Qt::WindowStaysOnBottomHint) &&
-            displayFlags.testFlag(Qt::WindowDoesNotAcceptFocus),
-            "display must stay below and not grab focus");
-    require(editFlags.testFlag(Qt::WindowStaysOnTopHint) &&
-            !editFlags.testFlag(Qt::WindowDoesNotAcceptFocus),
-            "calibration must remain interactive and on top");
+    // Calibration must NEVER call QWidget::setWindowFlags after first map:
+    // the single initial flag set contains no mode-specific hints.
+    const auto flags = desktop::widgetWindowFlags();
+    require((flags & Qt::WindowType_Mask) == Qt::Window &&
+            flags.testFlag(Qt::FramelessWindowHint),
+            "widget needs a fixed normal frameless window type");
+    require(!flags.testFlag(Qt::WindowStaysOnTopHint) &&
+            !flags.testFlag(Qt::WindowStaysOnBottomHint) &&
+            !flags.testFlag(Qt::WindowDoesNotAcceptFocus),
+            "initial flags must not require remapping for calibration");
+
 
     // Old four-corner configs still get exactly four derived edge midpoints.
     const std::array<QPointF,4> old{
