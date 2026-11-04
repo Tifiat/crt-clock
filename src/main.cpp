@@ -391,6 +391,20 @@ public:
 
     void start() { editing_ = false; applyMode(); }
 
+    void previewGift(const QString &name) {
+        pet::GiftKind kind;
+        if (name == QStringLiteral("star")) kind = pet::GiftKind::StarFly;
+        else if (name == QStringLiteral("arc")) kind = pet::GiftKind::ArcFly;
+        else if (name == QStringLiteral("pop")) kind = pet::GiftKind::BurstSad;
+        else if (name == QStringLiteral("cry")) kind = pet::GiftKind::BurstCry;
+        else if (name == QStringLiteral("pulse")) kind = pet::GiftKind::Pulse;
+        else return; // Ignore malformed commands without changing state.
+        animator_.previewGift(kind, elapsed_.elapsed());
+        musicStreamPhase_ = -1;
+        idleBreathPhase_ = -1;
+        redraw();
+    }
+
     void settings() {
         if (settingsWindow_) {
             settingsWindow_->raise();
@@ -829,9 +843,13 @@ int main(int argc, char **argv) {
     app.setQuitOnLastWindowClosed(false);
 
     const QStringList args = app.arguments();
-    const QString command = args.contains("--calibrate") ? "calibrate"
-                          : args.contains("--settings") ? "settings"
-                          : args.contains("--quit") ? "quit" : "start";
+    QString command = args.contains("--calibrate") ? "calibrate"
+                    : args.contains("--settings") ? "settings"
+                    : args.contains("--quit") ? "quit" : "start";
+    for (const QString &arg : args) {
+        if (arg.startsWith(QStringLiteral("--preview-gift=")))
+            command = arg.mid(2); // same command format for IPC and startup
+    }
     const QString socket = QString("crt-clock-%1").arg(getuid());
 
     QLocalSocket existing;
@@ -855,6 +873,8 @@ int main(int argc, char **argv) {
                 if (cmd == "calibrate") clock.edit();
                 else if (cmd == "settings") clock.settings();
                 else if (cmd == "quit") QApplication::quit();
+                else if (cmd.startsWith(QStringLiteral("preview-gift=")))
+                    clock.previewGift(cmd.mid(QStringLiteral("preview-gift=").size()));
                 else clock.start();
                 client->disconnectFromServer();
             });
@@ -866,6 +886,8 @@ int main(int argc, char **argv) {
     else {
         clock.start();
         if (command == "settings") clock.settings();
+        else if (command.startsWith(QStringLiteral("preview-gift=")))
+            clock.previewGift(command.mid(QStringLiteral("preview-gift=").size()));
     }
     return app.exec();
 }
