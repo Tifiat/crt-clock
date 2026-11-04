@@ -1,0 +1,30 @@
+#pragma once
+
+#include <algorithm>
+
+namespace pet {
+
+// A rare Fetch idle action chooses one self-contained gift outcome.
+// No real audio, particles, timers or Qt widgets live in this data type.
+enum class GiftKind : int { StarFly, ArcFly, BurstSad, BurstCry, Pulse };
+constexpr int kGiftKindCount = 5;
+
+enum class GiftCue : int {
+    None, Present, FlyStraight, FlyArc, Charge, Burst,
+    TearLeft, TearRight, Pulse
+};
+
+// Progress advances continuously (0..1) inside an authored Frame.
+// The painter is purely visual; the Animator owns all timing and priority.
+struct GiftVisual {
+    GiftCue cue = GiftCue::None;
+    GiftKind kind = GiftKind::StarFly;
+    double progress = 0.0;
+    [[nodiscard]] bool active() const { return cue != GiftCue::None; }
+};
+
+inline bool isBurst(GiftKind kind) {
+    return kind == GiftKind::BurstSad || kind == GiftKind::BurstCry;
+}
+
+} // namespace pet
