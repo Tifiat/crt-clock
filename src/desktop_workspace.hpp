@@ -139,4 +139,26 @@ inline bool isOnEveryWorkspace(WId nativeWindow) {
     XCloseDisplay(dpy);
     return assignedEverywhere;
 }
+
+// Keep calibration and display on ONE mapped native window. Qt's dynamic
+// setWindowFlags() would hide/reparent and can change its winId().
+inline void applyWindowMode(QWidget &window, bool editing, const QRect &rect) {
+    const bool firstMap = !window.isVisible();
+    window.setAttribute(Qt::WA_ShowWithoutActivating, !editing);
+    window.setFocusPolicy(editing ? Qt::StrongFocus : Qt::NoFocus);
+    window.setGeometry(rect);
+    if (firstMap) {
+        keepOnEveryWorkspace(window.winId());
+        window.show();
+    }
+    keepOnEveryWorkspace(window.winId());
+    requestStacking(window.winId(), editing);
+    if (editing) {
+        window.raise();
+        window.activateWindow();
+        window.setFocus(Qt::OtherFocusReason);
+    } else {
+        window.lower();
+    }
+}
 } // namespace desktop
