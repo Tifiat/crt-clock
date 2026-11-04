@@ -16,7 +16,7 @@ namespace pet {
 class SpriteCache {
 public:
     static constexpr int kCanvasWidth = 480;
-    static constexpr int kCropTop = 188;
+    static constexpr int kCropTop = 192;
     static constexpr int kSpriteHeight = 320 - kCropTop;
 
     void configure(const QString &font, const QString &original,
