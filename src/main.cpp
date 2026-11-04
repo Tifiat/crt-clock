@@ -247,7 +247,8 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
     if (stockPet && idleBreathPhase >= 0)
         text.translate(0, idleBreathPhase == 2 ? -1 : (idleBreathPhase == 5 ? 1 : 0));
     pet::paint(text, petArea, cfg.petFont,
-               cfg.pet, pose, petColor, cfg.petFontSize, cfg.petStroke, tail);
+               cfg.pet, pet::visiblePose(pose, gift), petColor,
+               cfg.petFontSize, cfg.petStroke, tail);
     text.restore();
     if (stockPet) {
         // Gift effects and the musical stream are independent vector layers.
