@@ -221,27 +221,34 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
         }
         case GiftCue::TearLeft:
         case GiftCue::TearRight: {
-            // Flowing tears instead of a solitary drop for each 1.35s cue.
-            // Four drops from the leading eye; the other eye follows half
-            // a beat later. Trails overlap, so several drops can be visible
-            // simultaneously. Keep a soft fade at the cue boundary.
+            // Six staggered drops per eye per cue, with two or three
+            // visible at any instant. A cyclic stream wraps exactly at
+            // t=0/1, so successive crying cues never restart from empty.
             const bool leftLeads = visual.cue == GiftCue::TearLeft;
+            constexpr double beatsPerCue = 6.0;
+            constexpr double fallInBeats = 2.45;
             for (int eye = 0; eye < 2; ++eye) {
                 const bool leading = (eye == 0) == leftLeads;
                 const qreal x = eye == 0 ? 142.0 : 237.0;
-                const double phase = t * 3.1 - (leading ? 0.0 : 0.38);
-                for (int dropIndex = 0; dropIndex < 4; ++dropIndex) {
-                    const double progress = phase - dropIndex * .7;
-                    if (progress < 0.0 || progress > 1.0) continue;
+                // Stagger the trailing eye smoothly, but return to the
+                // same droplet positions when the leading eye switches.
+                const double lag = leading ? 0.0 :
+                    0.30 * std::sin(std::numbers::pi * t);
+                const double phase = beatsPerCue * t - lag;
+                const int newest = static_cast<int>(std::floor(phase));
+                for (int trail = 0; trail < 3; ++trail) {
+                    const int index = newest - trail;
+                    const double progress = (phase - index) / fallInBeats;
+                    if (progress < 0.0 || progress >= 1.0) continue;
                     const qreal y = 249.0 + 38.0 * progress * progress;
-                    const double appear = std::clamp(progress / .12, 0.0, 1.0);
-                    const double vanish = std::clamp((1.0-progress)/.22, 0.0, 1.0);
-                    const double endFade = std::clamp((1.0-t)/.08, 0.0, 1.0);
-                    const double alpha = appear * vanish * endFade *
-                        (dropIndex % 2 ? .75 : .92);
+                    const double appear = std::clamp(progress / .10, 0.0, 1.0);
+                    const double vanish =
+                        std::clamp((1.0-progress) / .18, 0.0, 1.0);
+                    const bool odd = index % 2 != 0;
+                    const double alpha = appear * vanish * (odd ? .78 : .94);
                     if (alpha <= 0.0) continue;
-                    const qreal sway = (dropIndex % 2 ? -2.0 : 1.0) * progress;
-                    giftDrop(p, x + sway, y, dropIndex % 3 ? 5.0 : 6.5,
+                    const qreal sway = (odd ? -2.0 : 1.0) * progress;
+                    giftDrop(p, x + sway, y, index % 3 ? 5.0 : 6.5,
                              giftTint(QColor("#b5faff"), alpha));
                 }
             }

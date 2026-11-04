@@ -761,6 +761,38 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Tears must be a continuous stream, not one isolated droplet.
+    // Verify separate upper/lower drops in BOTH eyes, even near the
+    // start/end of a cue, and a seamless left/right cue transition.
+    auto cryingFrame = [](pet::GiftCue cue, double progress) {
+        QImage image(480, 320, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        pet::paintGiftEffect(painter,
+            {cue, pet::GiftKind::BurstCry, progress}, QColor("#88FF88"));
+        painter.end();
+        return image;
+    };
+    for (auto cue : {pet::GiftCue::TearLeft, pet::GiftCue::TearRight}) {
+        for (const double progress : {0.0, .12, .42, .85, 1.0}) {
+            const QImage frame = cryingFrame(cue, progress);
+            for (const int x0 : {129, 224}) {
+                int upper = 0, lower = 0;
+                for (int x = x0; x < x0 + 29; ++x) {
+                    for (int y = 244; y <= 258; ++y)
+                        upper += frame.pixelColor(x, y).alpha() > 20;
+                    for (int y = 263; y <= 295; ++y)
+                        lower += frame.pixelColor(x, y).alpha() > 20;
+                }
+                require(upper > 4 && lower > 4,
+                        "crying must keep multiple falling tears in both eyes");
+            }
+        }
+    }
+    require(cryingFrame(pet::GiftCue::TearLeft, 1.0) ==
+                cryingFrame(pet::GiftCue::TearRight, 0.0),
+            "successive crying cues must join without a tear reset");
+
     QImage noGift(480, 320, QImage::Format_ARGB32_Premultiplied);
     noGift.fill(Qt::transparent);
     {
