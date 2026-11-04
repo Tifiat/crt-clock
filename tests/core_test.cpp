@@ -63,7 +63,9 @@ int main() {
             if (historicMusicBack)
                 require(p.line.contains(QStringLiteral("●")), "historic backside tail missing");
             else
-                require(p.line.contains(QStringLiteral("◦")), "idle departure has no rear silhouette");
+                require(!p.line.contains(QStringLiteral("◦")) &&
+                        p.line.contains(QStringLiteral("       ")),
+                        "departure must not use a central dot as a tail");
         } else {
             require(p.line.at(0) == QChar('('), "left front anchor moved");
             require(p.line.at(2) == QChar(0xFF61), "left cheek moved");
@@ -174,10 +176,14 @@ int main() {
     // Celebration stays extended but uses ordinary happy poses, not a
     // special 700ms tail blip. The tail follows the eyes automatically.
     const auto celebration = pet::idleStory(pet::IdleAction::Celebrate);
-    require(pet::duration(celebration) == 4850, "celebration duration changed");
-    require(celebration.size() == 5, "celebration should have five clear steps");
+    require(pet::duration(celebration) == 8000,
+            "celebration should be sustained without slowing limb cadence");
+    require(celebration.size() == 7,
+            "celebration must include multiple joyful cycles");
     require(celebration[1].pose == pet::F04 &&
-            celebration[1].durationMs == 1650, "celebration happy hold missing");
+            celebration[1].durationMs == 1800 &&
+            celebration[1].absoluteDuration,
+            "celebration happiness must last at high speed settings");
 
     require(pet::kIdleActionCount == 14, "new idle patrol/fetch actions missing");
     const auto patrol = pet::idleStory(pet::IdleAction::Patrol);
@@ -357,7 +363,7 @@ int main() {
     pet::Animator fullMusic;
     fullMusic.advance(0, false, true);
     bool enteredFeature = false, returnedToGroove = false;
-    for (int ms = 40; ms <= 6500; ms += 40) {
+    for (int ms = 40; ms <= 12500; ms += 40) {
         fullMusic.advance(ms, false, true);
         if (fullMusic.featuredMusic()) enteredFeature = true;
         if (enteredFeature && !fullMusic.featuredMusic()) {
@@ -410,7 +416,7 @@ int main() {
     std::vector<bool> performed(pet::kMusicActionCount, false);
     int completedSelections = 0;
     bool previousFeature = false;
-    for (int t = 0; t < 85000 && completedSelections < pet::kMusicActionCount; t += 40) {
+    for (int t = 0; t < 150000 && completedSelections < pet::kMusicActionCount; t += 40) {
         fullQueue.advance(t, false, true);
         const bool feature = fullQueue.featuredMusic();
         if (feature && !previousFeature) {
@@ -605,7 +611,8 @@ int main() {
                 if (blast.pixelColor(x, y).alpha() > 0) ++count;
         require(count > 200, "burst must have a dense expanding ring and shards");
     }
-    for (auto cue : {pet::GiftCue::FlyStraight, pet::GiftCue::FlyArc,
+    for (auto cue : {pet::GiftCue::Carry, pet::GiftCue::Transfer,
+                     pet::GiftCue::FlyStraight, pet::GiftCue::FlyArc,
                      pet::GiftCue::TearLeft, pet::GiftCue::TearRight,
                      pet::GiftCue::Pulse, pet::GiftCue::Charge}) {
         QImage effect(480, 320, QImage::Format_ARGB32_Premultiplied);
