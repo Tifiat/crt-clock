@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 // Fast software renderer for a *fixed* eight-handle, four-cell projective
@@ -32,6 +33,9 @@ public:
         handles_ = absolute;
         origin_ = origin;
         samples_.clear();
+        previousBase_ = {};
+        previousMatrix_ = {};
+        lastUpdatedPixels_ = 0;
         ++buildCount_;
 
         if (viewport.isEmpty()) return true;
@@ -57,6 +61,9 @@ public:
         // Most mapped widgets occupy only a small portion of a laptop
         // display. Store only destination pixels inside the four quads.
         const int width = viewport.width(), rows = viewport.height();
+        // Cells can share an edge pixel. The original painter's last cell
+        // wins, so retain a single (last) inverse sample per destination.
+        std::vector<int> sampleIndex(static_cast<size_t>(width)*rows, -1);
         for (int cell = 0; cell < 4; ++cell) {
             QTransform forward;
             if (!QTransform::quadToQuad(input[cell], output[cell], forward))
@@ -87,9 +94,16 @@ public:
                         (sx - ix) * 256.0)), 0, 256);
                     const int fy = std::clamp(static_cast<int>(std::lround(
                         (sy - iy) * 256.0)), 0, 256);
-                    samples_.push_back({y * width + x, ix, iy,
-                                        static_cast<uint16_t>(fx),
-                                        static_cast<uint16_t>(fy)});
+                    const int dst = y * width + x;
+                    Sample sample{dst, ix, iy,
+                                  static_cast<uint16_t>(fx),
+                                  static_cast<uint16_t>(fy)};
+                    if (sampleIndex[dst] == -1) {
+                        sampleIndex[dst] = static_cast<int>(samples_.size());
+                        samples_.push_back(sample);
+                    } else {
+                        samples_[sampleIndex[dst]] = sample;
+                    }
                 }
             }
         }
@@ -124,10 +138,108 @@ public:
         return output;
     }
 
+    // The output is owned by the window: don't allocate or clear it on
+    // ordinary animation frames. Only source pixels that changed since
+    // the last projection need their corresponding destination samples
+    // recalculated. This produces exactly the same image as render().
+    void renderInto(QImage &output, const QImage &base,
+                    const QImage &matrix = {}) {
+        const bool fresh = output.size() != viewport_ ||
+                           output.format() != QImage::Format_ARGB32_Premultiplied ||
+                           previousBase_.isNull();
+        if (fresh) {
+            output = QImage(viewport_, QImage::Format_ARGB32_Premultiplied);
+            if (output.isNull()) {
+                lastUpdatedPixels_ = 0;
+                return;
+            }
+            output.fill(Qt::transparent);
+        }
+        if (!prepared_ || base.isNull()) {
+            output.fill(Qt::transparent);
+            previousBase_ = {};
+            previousMatrix_ = {};
+            lastUpdatedPixels_ = 0;
+            return;
+        }
+
+        const QImage currentBase =
+            base.format() == QImage::Format_ARGB32_Premultiplied
+                ? base : base.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        const QImage currentMatrix = matrix.isNull() ? QImage() :
+            matrix.format() == QImage::Format_ARGB32_Premultiplied
+                ? matrix : matrix.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+
+        QRect changed;
+        if (!fresh) {
+            changed = changedBounds(previousBase_, currentBase);
+            const QRect matrixChange = changedBounds(previousMatrix_, currentMatrix);
+            if (changed.isEmpty()) changed = matrixChange;
+            else if (!matrixChange.isEmpty()) changed = changed.united(matrixChange);
+        }
+        lastUpdatedPixels_ = 0;
+        if (!fresh && changed.isEmpty()) {
+            previousBase_ = currentBase;
+            previousMatrix_ = currentMatrix;
+            return;
+        }
+
+        const int left = changed.left(), right = changed.right();
+        const int top = changed.top(), bottom = changed.bottom();
+        const int width = viewport_.width();
+        const int dstStride = output.bytesPerLine()/4;
+        auto *pixels = reinterpret_cast<uint32_t *>(output.bits());
+        for (const Sample &sample : samples_) {
+            // A bilinear sample reads the 2x2 neighborhood (x..x+1,
+            // y..y+1), including adjacent samples at change boundaries.
+            if (!fresh && (sample.x > right || sample.x+1 < left ||
+                           sample.y > bottom || sample.y+1 < top))
+                continue;
+            const uint32_t baseColor = bilinear(currentBase, sample);
+            const uint32_t color = currentMatrix.isNull() ? baseColor :
+                over(bilinear(currentMatrix, sample), baseColor);
+            pixels[(sample.dst / width)*dstStride + sample.dst % width] = color;
+            ++lastUpdatedPixels_;
+        }
+        previousBase_ = currentBase;
+        previousMatrix_ = currentMatrix;
+    }
+
     [[nodiscard]] quint64 buildCount() const { return buildCount_; }
     [[nodiscard]] qsizetype mappedPixels() const { return samples_.size(); }
+    [[nodiscard]] qsizetype lastUpdatedPixels() const { return lastUpdatedPixels_; }
 
 private:
+    // The source image is 480x320, so a row compare is cheap compared with
+    // bilinear projection of the whole destination. Bounds include the
+    // entire changed region; an unchanged row costs one memcmp.
+    static QRect changedBounds(const QImage &previous, const QImage &current) {
+        if (previous.cacheKey() == current.cacheKey()) return {};
+        if (previous.size() != current.size() ||
+            previous.format() != current.format())
+            return QRect(0, 0, std::max(previous.width(), current.width()),
+                         std::max(previous.height(), current.height()));
+        int left = current.width(), right = -1, top = current.height(), bottom = -1;
+        const int width = current.width();
+        for (int y = 0; y < current.height(); ++y) {
+            const auto *oldRow = reinterpret_cast<const uint32_t *>(
+                previous.constScanLine(y));
+            const auto *newRow = reinterpret_cast<const uint32_t *>(
+                current.constScanLine(y));
+            if (std::memcmp(oldRow, newRow, size_t(width)*sizeof(uint32_t)) == 0)
+                continue;
+            int first = 0, last = width-1;
+            while (first < width && oldRow[first] == newRow[first]) ++first;
+            while (last >= first && oldRow[last] == newRow[last]) --last;
+            left = std::min(left, first);
+            right = std::max(right, last);
+            top = std::min(top, y);
+            bottom = y;
+        }
+        if (right < 0) return {};
+        return QRect(QPoint(left, top), QPoint(right, bottom));
+    }
+
     struct Sample {
         int dst;
         int x;
@@ -186,6 +298,9 @@ private:
     Handles handles_{};
     QPointF origin_;
     std::vector<Sample> samples_;
+    QImage previousBase_;
+    QImage previousMatrix_;
+    qsizetype lastUpdatedPixels_ = 0;
     quint64 buildCount_ = 0;
 };
 

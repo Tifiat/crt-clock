@@ -257,3 +257,20 @@ not a persistent configuration change.
 The baseline/optimized timing tests and the XFWM4 four-workspace
 integration test run in CI. CPU percentages must be measured on the
 actual laptop; CI cannot predict XFCE compositor costs.
+
+## Incremental projection after v0.6.4
+
+The single XFWM4 sticky window does **not** instantiate one widget per workspace.
+CPU use is dominated by live Qt software CRT compositing and projective
+sampling, especially moving notes or Matrix. The perspective cache now also
+retains the previous source image and the last projected output. It compares
+source rows and reprojects only destination pixels whose 2×2 bilinear source
+neighborhood changed. For music glyphs at the right, this avoids recomputing
+the rest of the projected window; geometry and Matrix activation invalidate
+correctly. Seam pixels use the last of the original four projective cells.
+The original full renderer remains available as the legacy A/B fallback.
+
+The opt-in profiler adds `lastWarpPixels` and `mappedWarpPixels`, allowing
+comparison between incremental updates and the full mapping. CI checks exact
+image equality for partial notes, Matrix changes, clearing Matrix, and
+recalibration. Actual CPU savings still need measurement on the Arch laptop.

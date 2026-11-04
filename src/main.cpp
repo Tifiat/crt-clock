@@ -516,6 +516,8 @@ public:
                 << " warpRebuilds=" << warpRebuilds_
                 << " avgWarpMs=" << mean(warpTimeNs_, warpRebuilds_)
                 << " cachedWarpMaps=" << perspectiveCache_.buildCount()
+                << " lastWarpPixels=" << perspectiveCache_.lastUpdatedPixels()
+                << " mappedWarpPixels=" << perspectiveCache_.mappedPixels()
                 << " matrixRebuilds=" << matrixRebuilds_
                 << " clockBuilds=" << canvas_.clockBuildCount()
                 << " cachedSpritesBuilt=" << canvas_.spriteBuildCount();
@@ -975,8 +977,9 @@ protected:
         if (projectionDirty_) {
             QElapsedTimer warpTimer;
             if (profileEnabled_) warpTimer.start();
-            projectedFrame_ = perspectiveCache_.render(
-                frame_, matrix_.active() ? matrixFrame_ : QImage());
+            perspectiveCache_.renderInto(
+                projectedFrame_, frame_,
+                matrix_.active() ? matrixFrame_ : QImage());
             projectionDirty_ = false;
             if (profileEnabled_) {
                 ++warpRebuilds_;

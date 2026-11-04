@@ -1064,6 +1064,49 @@ int main(int argc, char **argv) {
     require(!raster.prepare(viewport, skew, QPointF(0,0)),
             "constant geometry must remain cached across animation frames");
 
+    // Incremental projection must be pixel-for-pixel identical to the full
+    // renderer. In music/typing only a small corner changes from frame to
+    // frame; changing the geometry or switching Matrix must still invalidate.
+    perspective::RasterCache incremental;
+    require(incremental.prepare(viewport, skew, QPointF(0,0)),
+            "incremental first map");
+    QImage projected;
+    incremental.renderInto(projected, baseLayer, matrixLayer);
+    require(projected == incremental.render(baseLayer, matrixLayer),
+            "incremental cold frame must match full perspective");
+    require(incremental.lastUpdatedPixels() == incremental.mappedPixels(),
+            "first incremental frame must map every pixel");
+    QImage changedBase = baseLayer.copy();
+    {
+        QPainter painter(&changedBase);
+        painter.fillRect(QRect(426, 260, 16, 28), QColor(45, 205, 95, 210));
+    }
+    incremental.renderInto(projected, changedBase, matrixLayer);
+    require(projected == incremental.render(changedBase, matrixLayer),
+            "small musical change must project identically");
+    require(incremental.lastUpdatedPixels() < incremental.mappedPixels()/8,
+            "small musical region must avoid most projective samples");
+    incremental.renderInto(projected, changedBase, matrixLayer);
+    require(incremental.lastUpdatedPixels() == 0,
+            "same frame must skip all projective samples");
+    QImage changedMatrix = matrixLayer.copy();
+    {
+        QPainter painter(&changedMatrix);
+        painter.fillRect(QRect(400, 232, 18, 26), QColor(65, 140, 255, 180));
+    }
+    incremental.renderInto(projected, changedBase, changedMatrix);
+    require(projected == incremental.render(changedBase, changedMatrix),
+            "Matrix movement must preserve source-over blend");
+    incremental.renderInto(projected, changedBase);
+    require(projected == incremental.render(changedBase),
+            "stopping Matrix must clear its former projection");
+    incremental.prepare(viewport, rectangle, QPointF(0,0));
+    incremental.renderInto(projected, changedBase);
+    require(projected == incremental.render(changedBase),
+            "changed eight-point calibration must redraw whole output");
+    require(incremental.lastUpdatedPixels() == incremental.mappedPixels(),
+            "geometry change must invalidate incremental image");
+
     // Curved 8-handle calibration must preserve smooth colors across all
     // four joins. Compare the same full alpha gradient with Qt's original
     // projective path, excluding only partly covered outer-edge pixels.
