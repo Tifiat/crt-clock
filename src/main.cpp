@@ -305,6 +305,8 @@ public:
         }
 
         if (stockPet) {
+            if (motion.blush)
+                pet::paintShyBlush(text, QRectF(-40, 217, 460, 82), petColor);
             pet::paintGestureStreak(text, QRectF(-40, 217, 460, 82),
                                     petColor, motion.streak);
             pet::paintGiftEffect(text, gift, petColor);
