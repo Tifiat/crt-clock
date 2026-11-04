@@ -472,9 +472,14 @@ public:
 
         const bool changed = pose_ != lastPose_;
         lastPose_ = pose_;
-        // Dynamic vector effects advance every 40ms, independently of poses.
-        return changed || (activity_ == Activity::Idle && !story_.isEmpty() &&
-                           story_[frameIndex_].cue != GiftCue::Inactive);
+        // Continuous whole-body movement must repaint on every 40ms tick,
+        // even when the face/pose ID has not changed. Otherwise Patrol
+        // "teleports" between stops rather than walking across the canvas.
+        const bool interpolating = !story_.isEmpty() &&
+            story_[frameIndex_].moveFrom != story_[frameIndex_].moveTo;
+        const bool particles = activity_ == Activity::Idle && !story_.isEmpty() &&
+            story_[frameIndex_].cue != GiftCue::Inactive;
+        return changed || interpolating || particles;
     }
 
     [[nodiscard]] int pose() const { return pose_; }
