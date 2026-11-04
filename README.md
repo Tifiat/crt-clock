@@ -8,11 +8,11 @@ Designed for **Arch Linux + XFCE (X11)**. No Electron, browser, or GPU shader re
 
 - **8-point perspective calibration:** four corners and four independent edge handles; a ninth center handle moves the entire overlay.
 - **CRT effects:** phosphor glow, stationary scanlines, adjustable moving-scanline speed, pixel grid, colors, and brightness.
-- **Animated pet:** 14 idle stories with subtle breathing, a rare walk-away, fully vanish, and face-forward left-to-right return story with five gift outcomes, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music emits a dense staggered three-column vector-note stream in the same strip as typing Matrix (also during closed-eye listening). Gift effects include slow flying stars with visible comet tails, lingering sadness, a multiring burst with moving shards, and alternating slow tears. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
+- **Animated pet:** 14 idle stories with subtle breathing, a rare walk-away, fully vanish, and face-forward left-to-right return story with five gift outcomes, continuous joyful-eye tail wag, and 11 shuffled MPRIS music dances interleaved with a steady head-nod groove. Music frames share a 280ms beat at default speed; music emits about four rows of dense staggered notes confined below the date (also during closed-eye listening). Gift effects include a gift visible in the pet's hand upon return, a hand-off to the left paw, waves or long arcs across the full canvas with obvious comet tails, a multiring burst with moving shards, and separate slow tears. Typing reactions are separate. Typing displays two rising columns of Japanese symbols; key contents are never recorded.
 - **Animation debugging:** a third context-menu entry opens 4 preview tabs covering 14 idle actions, baseline groove + 11 music dances, typing/Matrix, and 5 distinct gift endings. Autonomous speed, MPRIS and typing switches are grouped there. One-shot previews never consume shuffled action queues.
 - **Desktop integration:** XFCE/X11 all-workspace hints with a stable X11 window ID through calibration and real XFWM4 regression tests and optional XDG autostart, with a right-click settings menu.
 
-**Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, clock-flicker frequency (0 = off, 100 = about every 4 seconds), and autonomous pet animation speed (50–180%, default 100). The pet speed controls idle/music only; typing stays at 115ms per frame. Font pickers list installed fonts and accept a typed family.
+**Appearance:** set clock/date and pet fonts independently; adjust time, date, and pet size, pet stroke thickness, moving-scanline speed, clock-flicker frequency (0 = off, 100 = about every 4 seconds), and autonomous pet animation speed (50–180%, default 100). The pet speed controls active idle/music motions, while expressive holds (glances, sleep, crying and gift flights) retain their readable real-time durations. Typing stays at 115ms per frame. Font pickers list installed fonts and accept a typed family.
 
 ## Install (Arch Linux)
 
@@ -118,3 +118,36 @@ MPRIS and typing response; Save persists them, Cancel reverts.
 
 In v0.6.1 the pet rests 50 pixels left of its former position to leave
 room for gifts; the perspective calibration and X11 window mode are unchanged.
+
+## v0.6.2 — Animation direction pass
+
+- **Idle:** waiting still breathes unobtrusively. Blink unchanged. Side glances
+  and shy expressions hold instead of flickering; surprise and confusion
+  linger; Sleepy takes close to twice as long. Greeting waves more times
+  with a small body sway, Fidget repeats paw gestures, and Celebrate lasts
+  longer without slowing the actual gestures. Indignant keeps angry eyes
+  long enough to read.
+- **Patrol:** no longer merely shifts 1–9 pixels. The entire pet walks from
+  its usual position to the right edge, turns through a horizontal mirror,
+  walks to the left edge and comes home, with smooth per-frame motion and
+  position-preserving stops at each turn.
+- **Back-facing departure:** replace the ambiguous central dot with a real
+  curved, tip-ended vector tail, which scales with the moving silhouette.
+- **Gifts:** the chosen star or box is already visible in the returning pet's
+  right hand. Flying versions toss the star to its left hand before an
+  unscaled 5.4–5.65 second flight across almost the whole 480px canvas.
+  One flight follows a gentle wave, the other a high sweeping arc. The
+  pulsing box now lasts 5.1 seconds, surrounded by four pulsing stars.
+  Burst variants retain the prior explosion and long tear holds; crying
+  eyes use dots rather than semicolons.
+- **Music:** featured dances gain more beats at the **same** active tempo;
+  the underlying groove keeps its eight 280ms frames. HandGroove moves
+  the body subtly; Sway gets two directional gesture marks only when
+  swaying. Background notes remain in a three-column staggered stream,
+  clipped to approximately four rows below the date.
+- **Timing:** the 50–180% speed setting controls the motions, not the
+  duration of readable facial expressions, gift flights or disappearance.
+  Idle gaps are deliberately long enough for the waiting/breathing pose.
+- All original glyph IDs, calibration geometry, X11 workspace handling
+  and per-user saved settings are preserved. The four animation-debug
+  tabs still preview every individual scenario.
