@@ -952,6 +952,16 @@ protected:
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         const QPointF origin(geometry().topLeft());
 
+        if (legacyPerspective_) {
+            // Optional diagnostic/visual fallback: the original CPU-heavy
+            // 4x or 8x quadToQuad path. Never changes saved perspective data.
+            perspective::draw(p, frame_, cfg_.quad, origin);
+            if (matrix_.active())
+                perspective::draw(p, matrixFrame_, cfg_.quad, origin);
+            perspective::scanlines(p, cfg_.quad, origin,
+                cfg_.scanlines ? cfg_.scanlineStrength : 0);
+            perspective::grille(p, cfg_.quad, origin, cfg_.grilleStrength);
+        } else {
         // The projective geometry is recomputed only after perspective
         // calibration or window geometry changes. For each new animated
         // frame, bilinear sampling uses the cached inverse map. A ripple-only
@@ -992,6 +1002,7 @@ protected:
                                 cfg_.grilleStrength);
         }
         p.drawImage(QPointF(0, 0), staticOverlay_);
+        }
         perspective::ripple(p, cfg_.quad, origin,
                              rippleStart_ < 0 ? -1.0 :
                                (elapsed_.elapsed() - rippleStart_) /
@@ -1255,6 +1266,8 @@ private:
     QDialog *animationSettingsWindow_ = nullptr;
     quint64 previewSerial_ = 0;
     const bool profileEnabled_ = qEnvironmentVariableIsSet("CRT_CLOCK_PROFILE");
+    const bool legacyPerspective_ =
+        qEnvironmentVariableIsSet("CRT_CLOCK_LEGACY_PERSPECTIVE");
     qint64 nextProfileReport_ = 6000;
     quint64 renders_ = 0;
     quint64 paints_ = 0;
