@@ -605,6 +605,15 @@ int main() {
     require(pStart.x() < pMid.x() && pMid.x() < pEnd.x() &&
             pMid.x() < 470 && pEnd.x() > 480,
             "gift must be visible on-screen for most of its slow flight");
+    require(pStart.x() < 90 && pEnd.x() > 480,
+            "stars must launch from the left paw and cross the entire canvas");
+    const QPointF waveHigh = pet::giftFlight(.125, false);
+    const QPointF waveLow = pet::giftFlight(.375, false);
+    require(waveHigh.y() < waveLow.y(),
+            "StarFly must undulate instead of drawing a straight diagonal");
+    const QPointF arcMid = pet::giftFlight(.5, true);
+    require(arcMid.y() < pMid.y() - 50,
+            "ArcFly must make a clearly visible high arc");
 
     // Manual preview runs even when MPRIS is playing, so all five rare
     // gift endings can be inspected without waiting for the idle shuffle.
@@ -647,7 +656,11 @@ int main() {
         }
         int pixels = 0;
         int columns[3] = {0, 0, 0};
-        for (int y = 54; y < 310; ++y)
+        for (int y = 0; y < 215; ++y)
+            for (int x = 376; x < 475; ++x)
+                require(image.pixelColor(x, y).alpha() == 0,
+                        "music must be clipped below the date, not run to the clock");
+        for (int y = 215; y < 310; ++y)
             for (int x = 378; x < 465; ++x)
                 if (image.pixelColor(x, y).alpha() > 0) {
                     ++pixels;
