@@ -821,7 +821,7 @@ public:
         };
 
         addTab(QStringLiteral("Idle"),
-               QStringLiteral("Дыхание в ожидании и все 14 самостоятельных Idle-сцен."),
+               QStringLiteral("Дыхание в ожидании и все 15 самостоятельных Idle-сцен."),
                {QStringLiteral("Дыхание / ожидание"),
                 QStringLiteral("Blink / моргание"),
                 QStringLiteral("Peek / взгляд в сторону"),
@@ -836,12 +836,13 @@ public:
                 QStringLiteral("Celebrate / радуется"),
                 QStringLiteral("Indignant / негодование"),
                 QStringLiteral("Patrol / ходит туда-сюда"),
-                QStringLiteral("Fetch / уходит и приносит звезду")},
+                QStringLiteral("Fetch / уходит и приносит звезду"),
+                QStringLiteral("Wink / один раз левым и правым глазом")},
                [this](int i) {
                    requestAnimationPreview(QStringLiteral("idle"), i - 1);
                });
         addTab(QStringLiteral("Music"),
-               QStringLiteral("Базовое покачивание и все 11 отдельных музыкальных танцев."),
+               QStringLiteral("Базовое покачивание и 9 музыкальных танцев без подмигиваний."),
                {QStringLiteral("Groove / базовое покачивание"),
                 QStringLiteral("HeadNod / кивает"),
                 QStringLiteral("TailWag / спиной и хвостом"),
@@ -849,11 +850,9 @@ public:
                 QStringLiteral("Bounce / прыжки"),
                 QStringLiteral("Sway / раскачивание"),
                 QStringLiteral("HappyDance / радуется"),
-                QStringLiteral("LookToBeat / взгляд в ритм"),
                 QStringLiteral("BigDance / большой танец"),
                 QStringLiteral("EyesClosedNotes / закрытые глаза"),
-                QStringLiteral("SideStep / шаги в стороны"),
-                QStringLiteral("WinkGroove / подмигивание")},
+                QStringLiteral("SideStep / шаги в стороны")},
                [this](int i) {
                    requestAnimationPreview(QStringLiteral("music"), i - 1);
                });
