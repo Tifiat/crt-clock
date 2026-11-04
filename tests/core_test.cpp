@@ -63,7 +63,9 @@ int main() {
             if (historicMusicBack)
                 require(p.line.contains(QStringLiteral("●")), "historic backside tail missing");
             else
-                require(p.line.contains(QStringLiteral("◦")), "idle departure has no rear silhouette");
+                require(!p.line.contains(QStringLiteral("◦")) &&
+                        p.line.contains(QStringLiteral("       ")),
+                        "departure must not use a central dot as a tail");
         } else {
             require(p.line.at(0) == QChar('('), "left front anchor moved");
             require(p.line.at(2) == QChar(0xFF61), "left cheek moved");
@@ -174,10 +176,14 @@ int main() {
     // Celebration stays extended but uses ordinary happy poses, not a
     // special 700ms tail blip. The tail follows the eyes automatically.
     const auto celebration = pet::idleStory(pet::IdleAction::Celebrate);
-    require(pet::duration(celebration) == 4850, "celebration duration changed");
-    require(celebration.size() == 5, "celebration should have five clear steps");
+    require(pet::duration(celebration) == 8000,
+            "celebration should be sustained without slowing limb cadence");
+    require(celebration.size() == 7,
+            "celebration must include multiple joyful cycles");
     require(celebration[1].pose == pet::F04 &&
-            celebration[1].durationMs == 1650, "celebration happy hold missing");
+            celebration[1].durationMs == 1800 &&
+            celebration[1].absoluteDuration,
+            "celebration happiness must last at high speed settings");
 
     require(pet::kIdleActionCount == 14, "new idle patrol/fetch actions missing");
     const auto patrol = pet::idleStory(pet::IdleAction::Patrol);
@@ -186,10 +192,17 @@ int main() {
             "rare idle stories should be recognizable complete actions");
     bool leftStep = false, rightStep = false, gift = false, farAway = false;
     bool vanished = false, returnsFront = false;
+    int patrolRight = 0, patrolLeft = 0;
+    bool mirroredReturn = false;
     for (const auto &step : patrol) {
         leftStep |= step.pose == pet::IdleStepLeft;
         rightStep |= step.pose == pet::IdleStepRight;
+        patrolRight = std::max(patrolRight, std::max(step.moveFrom, step.moveTo));
+        patrolLeft = std::min(patrolLeft, std::min(step.moveFrom, step.moveTo));
+        mirroredReturn |= step.mirror && step.moveTo < step.moveFrom;
     }
+    require(patrolRight >= 150 && patrolLeft <= -120 && mirroredReturn,
+            "Patrol must cross canvas and reverse with mirror");
     for (const auto &step : fetch) {
         gift |= step.cue == pet::GiftCue::Present;
         farAway |= step.pose == pet::AwayTiny;
@@ -198,6 +211,35 @@ int main() {
     }
     require(leftStep && rightStep && gift && farAway && vanished && returnsFront,
             "idle story must depart, disappear, return facing front and show gift");
+
+    pet::Animator walkingPreview;
+    walkingPreview.setAutonomousSpeed(146, 0);
+    walkingPreview.previewIdle(pet::IdleAction::Patrol, 0);
+    double farthestLeft = 0, farthestRight = 0;
+    bool turned = false;
+    int movingTicks = 0;
+    double lastOffset = 0;
+    bool lastMirror = false;
+    for (int t = 40; t <= 12000; t += 40) {
+        const bool dirty = walkingPreview.advance(t, false, false);
+        const auto motion = walkingPreview.motionVisual(t);
+        farthestLeft = std::min(farthestLeft, motion.offsetX);
+        farthestRight = std::max(farthestRight, motion.offsetX);
+        turned |= motion.mirror;
+        if (std::abs(motion.offsetX - lastOffset) > .5 ||
+            lastMirror != motion.mirror) {
+            ++movingTicks;
+            require(dirty,
+                    "position changes and mirrored turns need actual repaint");
+            require(std::abs(motion.offsetX - lastOffset) < 25.0,
+                    "patrol must not teleport between walking frames");
+        }
+        lastOffset = motion.offsetX;
+        lastMirror = motion.mirror;
+    }
+    require(farthestLeft < -110 && farthestRight > 145 && turned &&
+            movingTicks > 20,
+            "Patrol must cross left/right edges smoothly and turn mirrored at 146%");
     // Every gift has its own complete ending. Explosion branches alternate
     // falling tears from different eyes, then pass through anger/recovery.
     for (int kind = 0; kind < pet::kGiftKindCount; ++kind) {
@@ -205,6 +247,7 @@ int main() {
         const auto story = pet::fetchStory(variant);
         int vanishAt = -1, returnAt = -1, presentAt = -1;
         int tears = 0, bursts = 0, softSad = 0, calm = 0;
+        int carried = 0, handoff = 0, flew = 0;
         int lastTearIndex = -1, lastTearAtMs = 0, elapsedMs = 0;
         pet::GiftCue lastTear{}; // Xlib defines None as a macro
         for (int i = 0; i < story.size(); ++i) {
@@ -212,6 +255,14 @@ int main() {
             if (step.pose == pet::AwayGone) vanishAt = i;
             if (step.pose == pet::ReturnPeek) returnAt = i;
             if (step.cue == pet::GiftCue::Present) presentAt = i;
+            if (step.cue == pet::GiftCue::Carry) ++carried;
+            if (step.cue == pet::GiftCue::Transfer) ++handoff;
+            if (step.cue == pet::GiftCue::FlyStraight ||
+                step.cue == pet::GiftCue::FlyArc) {
+                ++flew;
+                require(step.durationMs >= 5200 && step.absoluteDuration,
+                        "flight must be long and independent of limb tempo");
+            }
             if (step.cue == pet::GiftCue::Burst) ++bursts;
             if (step.pose == pet::SadSoft) ++softSad;
             if (step.pose == pet::F13) ++calm;
@@ -236,6 +287,13 @@ int main() {
                 "gift story timeline/neutral exit invalid");
         require(story[vanishAt].durationMs >= 3000,
                 "pet must stay gone visibly before returning");
+        require(carried == 4 && story[returnAt].cue == pet::GiftCue::Carry &&
+                story[returnAt].carryDx == -200,
+                "gift should be visible in the pet's hand on first reentry");
+        if (variant == pet::GiftKind::StarFly ||
+            variant == pet::GiftKind::ArcFly)
+            require(handoff == 1 && flew == 1,
+                    "flying gift must transfer from right to left hand");
         require(story[returnAt].pose == pet::ReturnPeek &&
                 !pet::frame(story[returnAt].pose).back,
                 "return must show the original front-facing pet");
@@ -256,6 +314,24 @@ int main() {
         else require(bursts == 0 && tears == 0,
                      "pulse gift should stay happy");
     }
+
+    // Gesture tempo and the duration of readable facial expressions
+    // must be independent: at 146% the limbs stay quick but sleepy
+    // eyes remain closed and side glances stay visible.
+    const auto sleepy = pet::idleStory(pet::IdleAction::Sleepy);
+    require(pet::duration(sleepy) >= 9000 &&
+            sleepy[1].absoluteDuration && sleepy[1].durationMs >= 3200,
+            "sleeping must be visibly long even at high animation speed");
+    const auto peek = pet::idleStory(pet::IdleAction::Peek);
+    require(peek[1].absoluteDuration && peek[3].absoluteDuration &&
+            peek[1].durationMs >= 1400,
+            "side glance should be held instead of flickering");
+    const auto shy = pet::idleStory(pet::IdleAction::Shy);
+    require(shy[1].absoluteDuration && shy[3].absoluteDuration &&
+            shy[1].durationMs >= 1600,
+            "shy eyes should linger before returning to neutral");
+    require(pet::frame(pet::SadCry).line == QStringLiteral("(づ｡•﹏﹏•｡)づ"),
+            "crying uses dots rather than semicolons obscuring drawn tears");
 
     // 0 is slow, 100 is fast. Static scanlines do not use this duration.
     require(perspective::sweepDurationMs(0) == 5000, "slow sweep");
@@ -325,6 +401,16 @@ int main() {
         if (step.pose == pet::B02) wagRight = true;
     }
     require(wagLeft && wagRight, "the old tail movement must be restored");
+    require(pet::musicStory(pet::MusicAction::HeadNod).size() >= 22,
+            "nodding should last a few more seconds at fast tempo");
+    const auto swaying = pet::musicStory(pet::MusicAction::Sway);
+    bool streakRight = false, streakLeft = false;
+    for (const auto &frame : swaying) {
+        streakRight |= frame.streak == -1;
+        streakLeft |= frame.streak == 1;
+    }
+    require(streakRight && streakLeft,
+            "directional music marks must alternate with side movement");
     require(pet::duration(pet::typingStory()) < 600, "typing must feel responsive");
     for (const auto &step : pet::typingStory())
         require(step.durationMs == 115, "typing timeline must remain unscaled");
@@ -357,7 +443,7 @@ int main() {
     pet::Animator fullMusic;
     fullMusic.advance(0, false, true);
     bool enteredFeature = false, returnedToGroove = false;
-    for (int ms = 40; ms <= 6500; ms += 40) {
+    for (int ms = 40; ms <= 12500; ms += 40) {
         fullMusic.advance(ms, false, true);
         if (fullMusic.featuredMusic()) enteredFeature = true;
         if (enteredFeature && !fullMusic.featuredMusic()) {
@@ -410,7 +496,7 @@ int main() {
     std::vector<bool> performed(pet::kMusicActionCount, false);
     int completedSelections = 0;
     bool previousFeature = false;
-    for (int t = 0; t < 85000 && completedSelections < pet::kMusicActionCount; t += 40) {
+    for (int t = 0; t < 150000 && completedSelections < pet::kMusicActionCount; t += 40) {
         fullQueue.advance(t, false, true);
         const bool feature = fullQueue.featuredMusic();
         if (feature && !previousFeature) {
@@ -519,6 +605,15 @@ int main() {
     require(pStart.x() < pMid.x() && pMid.x() < pEnd.x() &&
             pMid.x() < 470 && pEnd.x() > 480,
             "gift must be visible on-screen for most of its slow flight");
+    require(pStart.x() < 90 && pEnd.x() > 480,
+            "stars must launch from the left paw and cross the entire canvas");
+    const QPointF waveHigh = pet::giftFlight(.125, false);
+    const QPointF waveLow = pet::giftFlight(.375, false);
+    require(waveHigh.y() < waveLow.y(),
+            "StarFly must undulate instead of drawing a straight diagonal");
+    const QPointF arcMid = pet::giftFlight(.5, true);
+    require(arcMid.y() < pMid.y() - 50,
+            "ArcFly must make a clearly visible high arc");
 
     // Manual preview runs even when MPRIS is playing, so all five rare
     // gift endings can be inspected without waiting for the idle shuffle.
@@ -561,7 +656,11 @@ int main() {
         }
         int pixels = 0;
         int columns[3] = {0, 0, 0};
-        for (int y = 54; y < 310; ++y)
+        for (int y = 0; y < 215; ++y)
+            for (int x = 376; x < 475; ++x)
+                require(image.pixelColor(x, y).alpha() == 0,
+                        "music must be clipped below the date, not run to the clock");
+        for (int y = 215; y < 310; ++y)
             for (int x = 378; x < 465; ++x)
                 if (image.pixelColor(x, y).alpha() > 0) {
                     ++pixels;
@@ -605,7 +704,8 @@ int main() {
                 if (blast.pixelColor(x, y).alpha() > 0) ++count;
         require(count > 200, "burst must have a dense expanding ring and shards");
     }
-    for (auto cue : {pet::GiftCue::FlyStraight, pet::GiftCue::FlyArc,
+    for (auto cue : {pet::GiftCue::Carry, pet::GiftCue::Transfer,
+                     pet::GiftCue::FlyStraight, pet::GiftCue::FlyArc,
                      pet::GiftCue::TearLeft, pet::GiftCue::TearRight,
                      pet::GiftCue::Pulse, pet::GiftCue::Charge}) {
         QImage effect(480, 320, QImage::Format_ARGB32_Premultiplied);

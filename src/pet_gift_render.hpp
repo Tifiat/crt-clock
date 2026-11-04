@@ -19,10 +19,13 @@ inline QColor giftTint(QColor color, double alpha) {
 }
 
 inline QPointF giftFlight(double t, bool arc) {
-    // Four-second on-screen flight instead of leaving the 480px canvas
-    // halfway through a 1.5s scene.
-    const qreal x = 350.0 + 140.0 * t;
-    const qreal y = 247.0 - 155.0 * t - (arc ? 29.0 * std::sin(std::numbers::pi * t) : 0.0);
+    // Flight crosses almost the entire 480px canvas. StarFly oscillates
+    // like a wave, ArcFly makes a long high arc, both launch from the LEFT
+    // paw after the visible hand-off.
+    const qreal x = 70.0 + 438.0 * t;
+    const qreal y = arc
+        ? 245.0 - 125.0*t - 78.0*std::sin(std::numbers::pi*t)
+        : 242.0 - 125.0*t - 24.0*std::sin(4.0*std::numbers::pi*t);
     return {x, y};
 }
 
@@ -76,7 +79,7 @@ inline void giftDrop(QPainter &p, qreal x, qreal y, qreal size, QColor color) {
 inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosphor) {
     if (!visual.active()) return;
     const double t = std::clamp(visual.progress, 0.0, 1.0);
-    const QPointF origin(350, 247);
+    const QPointF origin(367, 247);
     const QColor bright("#d8ffe1");
     QColor color = phosphor;
     p.save();
@@ -85,9 +88,32 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
 
     switch (visual.cue) {
         case GiftCue::Inactive: break;
+        case GiftCue::Carry: {
+            const QPointF carried = origin + QPointF(visual.carryDx, 0);
+            if (isBurst(visual.kind) || visual.kind == GiftKind::Pulse)
+                giftBox(p, carried, 25, color);
+            else giftStar(p, carried, 12, color);
+            break;
+        }
+        case GiftCue::Transfer: {
+            const QPointF handoff(origin.x() - 297*t,
+                                  origin.y() - 65*std::sin(std::numbers::pi*t));
+            p.setPen(QPen(giftTint(color, .25), 1.6,
+                          Qt::SolidLine, Qt::RoundCap));
+            for (int i = 1; i <= 5; ++i) {
+                const double old = t - .035*i;
+                if (old < 0) continue;
+                const QPointF prev(origin.x() - 297*old,
+                                   origin.y() - 65*std::sin(std::numbers::pi*old));
+                p.drawLine(prev+QPointF(-5,1), prev+QPointF(0,-2));
+            }
+            giftStar(p, handoff, 11.5, color);
+            break;
+        }
         case GiftCue::Present: {
             const qreal pulse = 1.0 + .04 * std::sin(t * 2.0 * std::numbers::pi);
-            if (isBurst(visual.kind)) giftBox(p, origin, 25 * pulse, color);
+            if (isBurst(visual.kind) || visual.kind == GiftKind::Pulse)
+                giftBox(p, origin, 25 * pulse, color);
             else giftStar(p, origin, 10 * pulse, color);
             break;
         }
@@ -119,12 +145,21 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
             break;
         }
         case GiftCue::Pulse: {
-            const qreal pulse = 10.0 + 6.0 * std::abs(std::sin(t * 4.0 * std::numbers::pi));
-            const QColor faded = giftTint(color, 1.0 - .7 * t);
-            giftStar(p, origin, pulse, faded);
+            const double fade = t > .83 ? (1.0-t)/.17 : 1.0;
+            const qreal breathe = 1.0 + .17*std::sin(t*6.0*std::numbers::pi);
+            giftBox(p, origin, 29.0*breathe, giftTint(color, fade));
+            const qreal radius = 29 + 8*std::sin(t*6*std::numbers::pi);
+            p.setPen(QPen(giftTint(bright, fade*.48), 1.6));
             p.setBrush(Qt::NoBrush);
-            p.setPen(QPen(giftTint(bright, .32 * (1.0-t)), 1.5));
-            p.drawEllipse(origin, pulse + 7, pulse + 7);
+            p.drawEllipse(origin, radius, radius);
+            // Not only the box: four small stars each gently pulse.
+            for (int i = 0; i < 4; ++i) {
+                const double a = i*std::numbers::pi/2 + .32;
+                const qreal distance = 38 + 6*std::sin(t*6*std::numbers::pi+i);
+                const QPointF spark = origin + QPointF(
+                    distance*std::cos(a), distance*std::sin(a));
+                giftStar(p, spark, (5+i%2*2)*breathe, giftTint(bright, fade*.8));
+            }
             break;
         }
         case GiftCue::Charge: {
