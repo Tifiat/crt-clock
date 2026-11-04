@@ -8,6 +8,7 @@
 #include <QPen>
 #include <QRectF>
 #include <algorithm>
+#include <cmath>
 
 // Renderer only: fixed columns, a user-selected font/size and stroke density
 // shared by every pose. Never auto-fit individual Unicode characters.
@@ -33,6 +34,7 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
     }
 
     const Pose pose = frame(poseId);
+    if (pose.hidden) return;
     p.save();
     if (pose.retreatScale < 1.0) {
         // Rare fetch story only. The character's authored grid and font stay
@@ -61,8 +63,10 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
                         thickness < 80 ? 5 : 7;
     for (int column = 0; column < columns; ++column) {
         const bool face = !pose.back && column >= 2 && column <= 7;
+        const int expressionY = (column == 3 || column == 6) ? pose.eyeDy :
+                                (column == 4 || column == 5) ? pose.mouthDy : 0;
         const QRectF slot(left + column * cell + (face ? pose.headDx : 0),
-                          top + (face ? pose.headDy : 0),
+                          top + (face ? pose.headDy : 0) + expressionY,
                           cell, area.height());
         const QString letter(pose.line.at(column));
         if (letter == QStringLiteral(" ")) continue;
@@ -100,67 +104,48 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
     p.restore();
 }
 
-// Idle ambient movement is independent of the slow idle shuffle-bag actions.
-// Short low-contrast strokes near paws plus a one-pixel breathing motion
-// prevent long idle pauses from looking like a frozen screenshot.
-inline void paintIdleMarks(QPainter &p, const QRectF &area, QColor color, int phase) {
+// A three-column, chessboard-staggered musical rain replaces the six notes
+// over the pet's head. It uses the SAME screen strip as typing Matrix,
+// but never runs at the same time because Typing has higher priority.
+// No font glyph is sampled; every note is built from simple vector strokes.
+inline void paintMusicStream(QPainter &p, QColor color, int phase) {
     if (phase < 0) return;
-    phase %= 6;
-    color.setAlphaF(color.alphaF() * 0.46);
+    const qreal offset = std::fmod(phase * 2.4, 18.0);
     p.save();
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setPen(QPen(color, 1.8, Qt::SolidLine, Qt::RoundCap));
-    const qreal y = area.center().y();
-    if (phase == 1 || phase == 2 || phase == 5) {
-        p.drawLine(QPointF(area.center().x()-168, y-14),
-                   QPointF(area.center().x()-174, y-19));
-        p.drawLine(QPointF(area.center().x()-166, y-1),
-                   QPointF(area.center().x()-173, y-2));
-    }
-    if (phase == 3 || phase == 4 || phase == 5) {
-        p.drawLine(QPointF(area.center().x()+166, y-14),
-                   QPointF(area.center().x()+174, y-19));
-        p.drawLine(QPointF(area.center().x()+168, y-1),
-                   QPointF(area.center().x()+174, y-2));
-    }
-    p.restore();
-}
 
-// Notes are a music-only decorative overlay, independent of featured pose.
-// Draw simple vector quavers: no reliance on font glyph fallback or text
-// metrics, no new character cells, no overlap with Matrix's right columns.
-// phase < 0 suppresses music notes completely (idle and typing).
-inline void paintMusicNotes(QPainter &p, const QRectF &area,
-                            QColor color, int phase) {
-    if (phase < 0) return;
-    phase %= 8;
-    p.save();
-    p.setRenderHint(QPainter::Antialiasing, true);
-    color.setAlphaF(color.alphaF() * 0.85);
-    p.setPen(QPen(color, 2.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    p.setBrush(color);
+    for (int column = 0; column < 3; ++column) {
+        for (int row = 0; row < 19; ++row) {
+            const qreal x = 390 + 23 * column;
+            const qreal y = 308 - 18 * row - offset - (column % 2 ? 9 : 0);
+            if (y < 54 || y > 314) continue;
+            const qreal appear = std::clamp((314.0 - y) / 22.0, 0.0, 1.0);
+            const qreal vanish = std::clamp((y - 54.0) / 75.0, 0.0, 1.0);
+            const qreal variation = 0.74 + .26 * ((row * 7 + column * 3) % 5) / 4.0;
+            QColor ink = color;
+            ink.setAlphaF(color.alphaF() * .73 * appear * vanish * variation);
+            if (ink.alphaF() < .025) continue;
 
-    auto quaver = [&p](qreal x, qreal y) {
-        p.drawEllipse(QRectF(x - 4, y + 12, 8, 6));
-        p.drawLine(QPointF(x + 4, y + 15), QPointF(x + 4, y - 1));
-        QPainterPath flag;
-        flag.moveTo(x + 4, y - 1);
-        flag.cubicTo(x + 15, y + 1, x + 14, y + 9, x + 7, y + 10);
-        p.setBrush(Qt::NoBrush);
-        p.drawPath(flag);
-        p.setBrush(p.pen().color());
-    };
-
-    // Six staggered quavers in the short strip above the pet, each with
-    // independently phased vertical travel. No audio capture or analysis.
-    // They avoid the Matrix columns at x=398/421 and stay within 480x320.
-    static constexpr qreal xOffset[6] = {-129, -88, -44, 6, 55, 101};
-    static constexpr int stagger[6] = {0, 3, 6, 2, 5, 1};
-    for (int i = 0; i < 6; ++i) {
-        const int flight = (phase + stagger[i]) % 8;
-        const qreal x = area.center().x() + xOffset[i];
-        const qreal y = area.top() + 12 + (i % 3) * 3 - flight * 2.6;
-        quaver(x, y);
+            p.setPen(QPen(ink, 1.75, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.setBrush(ink);
+            const bool doubleNote = (row + column * 2) % 4 == 0;
+            if (doubleNote) {
+                // A compact paired eighth note, 15px tall.
+                p.drawEllipse(QRectF(x-7, y+2, 5, 4));
+                p.drawEllipse(QRectF(x+3, y+2, 5, 4));
+                p.drawLine(QPointF(x-2, y+4), QPointF(x-2, y-10));
+                p.drawLine(QPointF(x+8, y+4), QPointF(x+8, y-10));
+                p.drawLine(QPointF(x-2, y-10), QPointF(x+8, y-10));
+            } else {
+                p.drawEllipse(QRectF(x-4, y+2, 7, 5));
+                p.drawLine(QPointF(x+3, y+4), QPointF(x+3, y-11));
+                QPainterPath flag;
+                flag.moveTo(x+3, y-11);
+                flag.cubicTo(x+11, y-9, x+11, y-3, x+6, y-2);
+                p.setBrush(Qt::NoBrush);
+                p.drawPath(flag);
+            }
+        }
     }
     p.restore();
 }
