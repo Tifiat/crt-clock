@@ -10,17 +10,17 @@ enum class GiftKind : int { StarFly, ArcFly, BurstSad, BurstCry, Pulse };
 constexpr int kGiftKindCount = 5;
 
 enum class GiftCue : int {
-    None, Present, FlyStraight, FlyArc, Charge, Burst,
+    Inactive, Present, FlyStraight, FlyArc, Charge, Burst,
     TearLeft, TearRight, Pulse
 };
 
 // Progress advances continuously (0..1) inside an authored Frame.
 // The painter is purely visual; the Animator owns all timing and priority.
 struct GiftVisual {
-    GiftCue cue = GiftCue::None;
+    GiftCue cue = GiftCue::Inactive;
     GiftKind kind = GiftKind::StarFly;
     double progress = 0.0;
-    [[nodiscard]] bool active() const { return cue != GiftCue::None; }
+    [[nodiscard]] bool active() const { return cue != GiftCue::Inactive; }
 };
 
 inline bool isBurst(GiftKind kind) {
