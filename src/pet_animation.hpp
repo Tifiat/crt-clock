@@ -553,7 +553,9 @@ public:
         // including the initial and final holds without explicit tear cues.
         if (cryStartMs_ >= 0 && isBurst(giftKind_) &&
             (frame.pose == SadComic || frame.pose == SadCry)) {
-            return {GiftCue::TearLeft, giftKind_,
+            const GiftCue cue = frame.cue == GiftCue::TearRight
+                ? GiftCue::TearRight : GiftCue::TearLeft;
+            return {cue, giftKind_,
                     std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0),
                     0.0, double(std::max<qint64>(0, nowMs - cryStartMs_))};
         }
