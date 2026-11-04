@@ -221,13 +221,30 @@ inline void paintGiftEffect(QPainter &p, const GiftVisual &visual, QColor phosph
         }
         case GiftCue::TearLeft:
         case GiftCue::TearRight: {
-            const qreal x = visual.cue == GiftCue::TearLeft ? 142.0 : 237.0;
-            // Every cue is a separate 600ms tear, alternating eyes. The
-            // single tear starts by the eye and falls below the face.
-            const qreal y = 251.0 + 33.0 * t*t;
-            const double alpha = t < .12 ? t/.12 :
-                                 t > .85 ? (1.0-t)/.15 : 1.0;
-            giftDrop(p, x, y, 6.0, giftTint(QColor("#b5faff"), alpha));
+            // Flowing tears instead of a solitary drop for each 1.35s cue.
+            // Four drops from the leading eye; the other eye follows half
+            // a beat later. Trails overlap, so several drops can be visible
+            // simultaneously. Keep a soft fade at the cue boundary.
+            const bool leftLeads = visual.cue == GiftCue::TearLeft;
+            for (int eye = 0; eye < 2; ++eye) {
+                const bool leading = (eye == 0) == leftLeads;
+                const qreal x = eye == 0 ? 142.0 : 237.0;
+                const double phase = t * 4.3 - (leading ? 0.0 : 0.48);
+                for (int dropIndex = 0; dropIndex < 4; ++dropIndex) {
+                    const double progress = phase - dropIndex;
+                    if (progress < 0.0 || progress > 1.0) continue;
+                    const qreal y = 249.0 + 38.0 * progress * progress;
+                    const double appear = std::clamp(progress / .12, 0.0, 1.0);
+                    const double vanish = std::clamp((1.0-progress)/.22, 0.0, 1.0);
+                    const double endFade = std::clamp((1.0-t)/.08, 0.0, 1.0);
+                    const double alpha = appear * vanish * endFade *
+                        (dropIndex % 2 ? .75 : .92);
+                    if (alpha <= 0.0) continue;
+                    const qreal sway = (dropIndex % 2 ? -2.0 : 1.0) * progress;
+                    giftDrop(p, x + sway, y, dropIndex % 3 ? 5.0 : 6.5,
+                             giftTint(QColor("#b5faff"), alpha));
+                }
+            }
             break;
         }
     }
