@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pet_poses.hpp"
+#include "pet_gift.hpp"
 #include "pet_sequence.hpp"
 #include <QRandomGenerator>
 #include <QVector>
@@ -30,6 +31,7 @@ constexpr int kMaxAutonomousSpeed = 180;
 struct Frame {
     int pose;
     int durationMs;
+    GiftCue cue = GiftCue::None;
 };
 using Story = QVector<Frame>;
 
@@ -37,6 +39,54 @@ inline int duration(const Story &story) {
     int sum = 0;
     for (const Frame &f : story) sum += f.durationMs;
     return sum;
+}
+
+// One deliberate idle mini-story with five independent endings.
+// The departure ends in a genuinely invisible frame; returning from the
+// RIGHT uses regular front-facing glyphs at full size, not the rear silhouette.
+inline Story fetchStory(GiftKind kind) {
+    Story story = {
+        {F00, 650}, {IdleStepLeft, 500}, {AwayFace, 650},
+        {AwayNear, 620}, {AwayFar, 580}, {AwayTiny, 470},
+        {AwayGone, 1250}, // the pet is gone; keep clocks unaffected
+        {ReturnPeek, 440}, {ReturnSide, 440},
+        {ReturnApproach, 470}, {ReturnCenter, 560},
+        {ReturnCenter, 680, GiftCue::Present}
+    };
+    switch (kind) {
+        case GiftKind::StarFly:
+            story += Story{{ReturnCenter, 1500, GiftCue::FlyStraight},
+                           {SadSoft, 950}, {F00, 850}};
+            break;
+        case GiftKind::ArcFly:
+            story += Story{{ReturnCenter, 1560, GiftCue::FlyArc},
+                           {SadSoft, 1150}, {F00, 850}};
+            break;
+        case GiftKind::Pulse:
+            story += Story{{ReturnCenter, 1400, GiftCue::Pulse},
+                           {F04, 950}, {F00, 850}};
+            break;
+        case GiftKind::BurstSad:
+            story += Story{{ReturnCenter, 1000, GiftCue::Charge},
+                           {F05, 1050, GiftCue::Burst},
+                           {SadComic, 450},
+                           {SadComic, 660, GiftCue::TearLeft},
+                           {SadComic, 660, GiftCue::TearRight},
+                           {SadComic, 660, GiftCue::TearLeft},
+                           {SadAngry, 650}, {F00, 850}};
+            break;
+        case GiftKind::BurstCry:
+            story += Story{{ReturnCenter, 1100, GiftCue::Charge},
+                           {F05, 1200, GiftCue::Burst},
+                           {SadCry, 460},
+                           {SadCry, 620, GiftCue::TearLeft},
+                           {SadCry, 620, GiftCue::TearRight},
+                           {SadCry, 620, GiftCue::TearLeft},
+                           {SadCry, 620, GiftCue::TearRight},
+                           {SadAngry, 750}, {F00, 900}};
+            break;
+    }
+    return story;
 }
 
 // Authored multi-second activities. The 100-200ms blink is a brief
@@ -77,12 +127,7 @@ inline Story idleStory(IdleAction action) {
                     {IdleStepRight, 600}, {F00, 600},
                     {IdleStepLeft, 600}, {IdleStepRight, 600}, {F00, 950}};
         case IdleAction::Fetch:
-            // Rare, deliberately complete mini-story. Shrinking and gift
-            // are authored ONLY for these new pose IDs, not generic animation.
-            return {{F00, 700}, {IdleStepLeft, 500}, {AwayFace, 650},
-                    {AwayNear, 600}, {AwayFar, 600}, {AwayTiny, 900},
-                    {AwayFar, 650}, {AwayReturn, 650}, {AwayFace, 500},
-                    {GiftReturn, 1350}, {F04, 700}, {F00, 1000}};
+            return fetchStory(GiftKind::StarFly); // canonical idle catalog example
     }
     return {};
 }
@@ -197,8 +242,15 @@ public:
             else pose_ = F00;
         }
 
-        if (activity_ == Activity::Idle && story_.isEmpty() && nowMs >= idleDue_)
-            begin(idleStory(static_cast<IdleAction>(idleCycle_.next())), nowMs);
+        if (activity_ == Activity::Idle && story_.isEmpty() && nowMs >= idleDue_) {
+            const auto action = static_cast<IdleAction>(idleCycle_.next());
+            if (action == IdleAction::Fetch) {
+                giftKind_ = static_cast<GiftKind>(giftCycle_.next());
+                begin(fetchStory(giftKind_), nowMs);
+            } else {
+                begin(idleStory(action), nowMs);
+            }
+        }
 
         if (!story_.isEmpty() && nowMs >= nextFrame_) {
             ++frameIndex_;
@@ -226,19 +278,41 @@ public:
                 }
             } else {
                 pose_ = story_[frameIndex_].pose;
+                frameStartMs_ = nowMs;
                 nextFrame_ = nowMs + frameDuration(story_[frameIndex_].durationMs);
             }
         }
 
         const bool changed = pose_ != lastPose_;
         lastPose_ = pose_;
-        return changed;
+        // Dynamic vector effects advance every 40ms, independently of poses.
+        return changed || (activity_ == Activity::Idle && !story_.isEmpty() &&
+                           story_[frameIndex_].cue != GiftCue::None);
     }
 
     [[nodiscard]] int pose() const { return pose_; }
     [[nodiscard]] Activity activity() const { return activity_; }
     [[nodiscard]] bool idleResting() const {
         return activity_ == Activity::Idle && story_.isEmpty();
+    }
+    [[nodiscard]] bool idleBreathing() const {
+        // A faint 1px breath in long still frames, but no breathing on
+        // retreat, walking, disappearing, returning or during gift effects.
+        if (activity_ != Activity::Idle) return false;
+        if (story_.isEmpty()) return true;
+        const int pose = pose_;
+        if (pose == AwayGone || (pose >= AwayFace && pose <= AwayReturn) ||
+            (pose >= ReturnPeek && pose <= ReturnCenter) ||
+            pose == IdleStepLeft || pose == IdleStepRight) return false;
+        return story_[frameIndex_].cue == GiftCue::None;
+    }
+    [[nodiscard]] GiftVisual giftVisual(qint64 nowMs) const {
+        if (activity_ != Activity::Idle || story_.isEmpty()) return {};
+        const Frame &frame = story_[frameIndex_];
+        if (frame.cue == GiftCue::None) return {};
+        const int ms = frameDuration(frame.durationMs);
+        return {frame.cue, giftKind_,
+                std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0)};
     }
     [[nodiscard]] int autonomousSpeed() const { return speed_; }
     [[nodiscard]] bool featuredMusic() const {
@@ -260,6 +334,7 @@ private:
         frameIndex_ = 0;
         if (story_.isEmpty()) { pose_ = F00; return; }
         pose_ = story_[0].pose;
+        frameStartMs_ = nowMs;
         nextFrame_ = nowMs + frameDuration(story_[0].durationMs);
     }
 
@@ -274,6 +349,9 @@ private:
     int pendingFeatured_ = -1;
     ShuffleBag musicCycle_{kMusicActionCount};
     ShuffleBag idleCycle_{kIdleActionCount};
+    ShuffleBag giftCycle_{kGiftKindCount};
+    GiftKind giftKind_ = GiftKind::StarFly;
+    qint64 frameStartMs_ = 0;
     qint64 nextFrame_ = 0;
     qint64 idleDue_ = 8500;
 };
