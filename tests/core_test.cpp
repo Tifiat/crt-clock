@@ -477,6 +477,8 @@ int main() {
     // _NET_WM_STATE_STICKY, which may remain set on a single workspace.
     require(desktop::isAllDesktopsValue(0xFFFFFFFFUL),
             "all-workspaces desktop value must be recognized");
+    require(desktop::isAllDesktopsValue(~0UL),
+            "Xlib sign-extended all-desktops value must be recognized");
     require(!desktop::isAllDesktopsValue(0UL),
             "first workspace must not pass all-workspaces check");
     require(!desktop::isAllDesktopsValue(1UL),
