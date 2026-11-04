@@ -208,7 +208,8 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, const pet::JoyTail &tail) {
+QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
+                  const pet::JoyTail &tail, int musicNotePhase) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -233,8 +234,11 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity, const pe
     centered(text, QRectF(14, 154, 452, 52),
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
-    pet::paint(text, QRectF(10, 217, 460, 82), cfg.petFont,
+    const QRectF petArea(10, 217, 460, 82);
+    pet::paint(text, petArea, cfg.petFont,
                cfg.pet, pose, petColor, cfg.petFontSize, cfg.petStroke, tail);
+    if (cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ"))
+        pet::paintMusicNotes(text, petArea, petColor, musicNotePhase);
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -303,6 +307,14 @@ public:
         const bool joyful = cfg_.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ") &&
                            pet::hasJoyfulEyes(pet::frame(animator_.pose()));
         dirty = joyTail_.advance(now, joyful, cfg_.petAnimationSpeed) || dirty;
+        // Decorative notes run independently while music is playing. Typing
+        // takes priority and suppresses them without changing Matrix timing.
+        const int nextNotePhase = animator_.activity() == pet::Activity::Music
+            ? int(((now * cfg_.petAnimationSpeed / 100) / 220) % 8) : -1;
+        if (nextNotePhase != musicNotePhase_) {
+            musicNotePhase_ = nextNotePhase;
+            dirty = true;
+        }
         const quint64 count = keyboard_->pressCount();
         if (count > keyPressCount_) {
             // Each detected press creates one decorative glyph, not the typed
@@ -738,7 +750,8 @@ private:
         }
     }
     void redraw() {
-        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_);
+        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_,
+                            musicNotePhase_);
         if (matrix_.active()) rebuildMatrix();
         update();
     }
@@ -792,6 +805,7 @@ private:
     double clockIntensity_ = 1.0;
     QString lastMinute_;
     bool musicPlaying_ = false;
+    int musicNotePhase_ = -1;
     QDialog *settingsWindow_ = nullptr;
     bool editing_ = false;
 };
