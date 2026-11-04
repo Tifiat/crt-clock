@@ -49,9 +49,14 @@ inline void keepOnEveryWorkspace(WId nativeWindow) {
     XCloseDisplay(dpy);
 }
 
-// Read the state back from XFWM4. Window managers may reset EWMH workspace
-// flags when a settings dialog takes focus or when a Qt::Tool is remapped.
-// One of the two standardized indicators is sufficient.
+// Read the actual desktop assignment back from XFWM4.
+// _NET_WM_STATE_STICKY alone is NOT proof of "all workspaces": it controls
+// viewport scrolling, while _NET_WM_DESKTOP=0xFFFFFFFF controls visibility
+// across distinct XFCE workspaces. Checking (desktop || sticky) masked a real
+// regression when XFWM4 kept STICKY but moved the widget to one desktop.
+constexpr bool isAllDesktopsValue(unsigned long desktop) {
+    return desktop == 0xFFFFFFFFUL;
+}
 inline bool isOnEveryWorkspace(WId nativeWindow) {
     Display *dpy = XOpenDisplay(nullptr);
     if (!dpy) return false;
@@ -68,26 +73,12 @@ inline bool isOnEveryWorkspace(WId nativeWindow) {
         == Success) {
         assignedEverywhere = actualType == XA_CARDINAL && actualFormat == 32 &&
                              items >= 1 && data != nullptr &&
-                             *reinterpret_cast<unsigned long *>(data) == 0xFFFFFFFFUL;
+                             isAllDesktopsValue(*reinterpret_cast<unsigned long *>(data));
     }
     if (data) XFree(data);
 
-    bool sticky = false;
-    const Atom state = XInternAtom(dpy, "_NET_WM_STATE", False);
-    const Atom stateSticky = XInternAtom(dpy, "_NET_WM_STATE_STICKY", False);
-    actualType = None;
-    actualFormat = 0;
-    items = bytesAfter = 0;
-    data = nullptr;
-    if (XGetWindowProperty(dpy, window, state, 0, 64, False, XA_ATOM,
-                           &actualType, &actualFormat, &items, &bytesAfter, &data)
-        == Success && actualType == XA_ATOM && actualFormat == 32 && data) {
-        const auto *atoms = reinterpret_cast<Atom *>(data);
-        for (unsigned long i = 0; i < items; ++i)
-            if (atoms[i] == stateSticky) { sticky = true; break; }
-    }
-    if (data) XFree(data);
     XCloseDisplay(dpy);
-    return assignedEverywhere || sticky;
+    return assignedEverywhere;
+
 }
 } // namespace desktop
