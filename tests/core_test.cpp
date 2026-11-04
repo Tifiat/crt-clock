@@ -975,6 +975,39 @@ int main(int argc, char **argv) {
     require(!raster.prepare(viewport, skew, QPointF(0,0)),
             "constant geometry must remain cached across animation frames");
 
+    // Curved 8-handle calibration must preserve smooth colors across all
+    // four joins. Compare the same full alpha gradient with Qt's original
+    // projective path, excluding only partly covered outer-edge pixels.
+    QImage gradient(480, 320, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < gradient.height(); ++y) {
+        auto *line = reinterpret_cast<QRgb *>(gradient.scanLine(y));
+        for (int x = 0; x < gradient.width(); ++x)
+            line[x] = qRgb((x*255)/479, (y*255)/319, (x+y)%256);
+    }
+    const QImage warpedGradient = raster.render(gradient);
+    QImage qtGradient(viewport, QImage::Format_ARGB32_Premultiplied);
+    qtGradient.fill(Qt::transparent);
+    {
+        QPainter painter(&qtGradient);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        perspective::draw(painter, gradient, skew, QPointF(0,0));
+    }
+    qint64 difference = 0;
+    int samples = 0;
+    for (int y = 25; y < viewport.height()-20; y += 4)
+        for (int x = 25; x < viewport.width()-20; x += 4) {
+            const QColor expected = qtGradient.pixelColor(x,y);
+            const QColor actual = warpedGradient.pixelColor(x,y);
+            if (expected.alpha() < 253 || actual.alpha() < 253)
+                continue;
+            difference += std::abs(expected.red() - actual.red());
+            difference += std::abs(expected.green() - actual.green());
+            ++samples;
+        }
+    require(samples > 7000 && double(difference) / samples < 35.0,
+            "cached raster must preserve smooth colors across a bent 8-handle geometry");
+
     // Moving the central handle translates every corner/edge equally.
     const QPointF offset(13, -9);
     for (auto &handle : handles) handle += offset;
