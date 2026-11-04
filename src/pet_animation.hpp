@@ -468,8 +468,10 @@ public:
                     story_.clear();
                     pose_ = F00;
                     previewActive_ = false;
+                    // Atmosphere/idle spacing is independent of rapid
+                    // gestures: higher speed must not spam every idle event.
                     idleDue_ = nowMs +
-                        scaledDuration(QRandomGenerator::global()->bounded(6500, 14500));
+                        QRandomGenerator::global()->bounded(7500, 16000);
                 }
             } else {
                 pose_ = story_[frameIndex_].pose;
