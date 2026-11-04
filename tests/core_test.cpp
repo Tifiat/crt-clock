@@ -15,6 +15,8 @@
 #include "crt_style.hpp"
 #include "matrix_rain.hpp"
 #include "perspective.hpp"
+// Include Xlib-facing header after all Qt headers: Xlib defines None.
+#include "desktop_workspace.hpp"
 #include "clock_flicker.hpp"
 #include "desktop_autostart.hpp"
 
@@ -241,6 +243,15 @@ int main() {
     require(!desktop::autostartEnabled(), "autostart entry remains after disable");
     if (previousXdg.isEmpty()) qunsetenv("XDG_CONFIG_HOME");
     else qputenv("XDG_CONFIG_HOME", previousXdg);
+
+    // XFCE workspace visibility depends on _NET_WM_DESKTOP, not merely
+    // _NET_WM_STATE_STICKY, which may remain set on a single workspace.
+    require(desktop::isAllDesktopsValue(0xFFFFFFFFUL),
+            "all-workspaces desktop value must be recognized");
+    require(!desktop::isAllDesktopsValue(0UL),
+            "first workspace must not pass all-workspaces check");
+    require(!desktop::isAllDesktopsValue(1UL),
+            "second workspace must not pass all-workspaces check");
 
     // Old four-corner configs still get exactly four derived edge midpoints.
     const std::array<QPointF,4> old{

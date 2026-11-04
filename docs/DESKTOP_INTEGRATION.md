@@ -23,7 +23,7 @@ Do not create a system-level service or silently enable autostart during package
 3. Also request `_NET_WM_STATE_STICKY` with a `_NET_WM_STATE_ADD` ClientMessage, because some X11 window managers need a separate sticky hint.
 4. Repeat post-map requests shortly after mapping, in case the WM has not processed the initial request yet.
 5. Reapply from `ClockWindow::applyMode` whenever the window is recreated during calibration/cancel. Also reassert on settings show and on settings destruction, with additional WM-processing delays.
-6. Read back `_NET_WM_DESKTOP` / `_NET_WM_STATE_STICKY` every three seconds and repair a lost assignment without restarting the widget. Only do this on the live window ID; avoid triggering hide/show or resetting calibration.
+6. Read back `_NET_WM_DESKTOP` every three seconds and repair a lost assignment without restarting the widget. Only do this on the live window ID; avoid triggering hide/show or resetting calibration.
 7. **v0.5.5 calibration fix:** entering and exiting calibration calls `applyMode()` and changes Qt flags (topmost for editing, bottommost for display). This recreates the underlying X11 window. After **both Enter/Save and Escape/Cancel** call `finishCalibration()`, which repeats all-workspaces EWMH requests at 0, 250, 900, 2000 and 4500 ms while in display mode. Do not remove the delayed requests without verifying XFWM4; the previous single delayed request was insufficient.
 
 This is a **WM request, not a guaranteed override**. If XFCE still puts the widget on one workspace, check with `xprop` (click on the widget and inspect `_NET_WM_DESKTOP` and `_NET_WM_STATE`), compare with the WM's sticky window action, and inspect `xfwm4` behavior. Do not confuse workspace stickiness with autostart.
@@ -43,3 +43,7 @@ The settings dialog uses a form with **labels on their own lines** (`QFormLayout
 
 - `tests/core_test.cpp` checks flicker interval semantics, plus XDG autostart enable/disable within an isolated temporary directory.
 - CI can compile Xlib/EWMH integrations but **cannot** verify that a user's XFWM4 window accepts sticky requests or test how the window is mapped across desktop switches. The final integration check is on the target Arch/XFCE laptop.
+
+### v0.5.6: Verify desktop assignment, not just STICKY
+
+XFWM4 can leave `_NET_WM_STATE_STICKY` set while assigning the window to a single desktop. In EWMH, STICKY means viewport-stationary, not necessarily visible on all distinct XFCE workspaces. The periodic repair therefore checks only `_NET_WM_DESKTOP == 0xFFFFFFFF` for XFCE and reasserts the all-desktops request if lost. This prevents a false healthy state after calibration, settings, or focus changes.
