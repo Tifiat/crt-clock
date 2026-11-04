@@ -7,6 +7,8 @@
 #include <QVector>
 #include <algorithm>
 #include <initializer_list>
+#include <cmath>
+#include <numbers>
 #include <QtGlobal>
 #include <utility>
 
@@ -15,14 +17,14 @@ namespace pet {
 enum class Activity { Idle, Music, Typing };
 enum class IdleAction : int {
     Blink, Peek, Smile, Surprise, Smug, Shy, Sleepy, Confused,
-    Greeting, Fidget, Celebrate, Indignant, Patrol, Fetch
+    Greeting, Fidget, Celebrate, Indignant, Patrol, Fetch, WinkLeftRight
 };
 enum class MusicAction : int {
     HeadNod, TailWag, HandGroove, Bounce, Sway, HappyDance,
-    LookToBeat, BigDance, EyesClosedNotes, SideStep, WinkGroove
+    BigDance, EyesClosedNotes, SideStep
 };
-constexpr int kIdleActionCount = 14;
-constexpr int kMusicActionCount = 11;
+constexpr int kIdleActionCount = 15;
+constexpr int kMusicActionCount = 9;
 constexpr int kMusicBeatMs = 280;
 constexpr int kDefaultAutonomousSpeed = 100;
 constexpr int kMinAutonomousSpeed = 50;
@@ -38,6 +40,7 @@ struct Frame {
     int streak = 0;
     bool absoluteDuration = false; // hold/read emotion; speed affects gestures
     int carryDx = 0; // carried gift offset while entering the canvas
+    bool blush = false; // only the held shy expression
 };
 
 // Eyegaze and sleep need a readable minimum independent of fast limb tempo.
@@ -46,6 +49,12 @@ inline Frame hold(int pose, int ms, GiftCue cue = GiftCue::Inactive) {
     Frame frame{pose, ms, cue};
     frame.absoluteDuration = true;
     return frame;
+}
+
+inline Frame shyHold(int pose, int ms) {
+    Frame f = hold(pose, ms);
+    f.blush = true;
+    return f;
 }
 
 inline Frame walk(int pose, int ms, int from, int to, bool mirror = false) {
@@ -77,9 +86,11 @@ inline int duration(const Story &story) {
     return sum;
 }
 
-inline Frame carrying(int pose, int ms, int bodyOffset) {
-    Frame f{pose, ms, GiftCue::Carry};
-    f.carryDx = bodyOffset;
+inline Frame carryingWalk(int pose, int ms, int from, int to) {
+    Frame f = walk(pose, ms, from, to);
+    f.cue = GiftCue::Carry;
+    f.absoluteDuration = true;
+    // Both the pet and carried prop move on the same interpolated track.
     return f;
 }
 
@@ -92,10 +103,12 @@ inline Story fetchStory(GiftKind kind) {
         {AwayNear, 680}, {AwayFar, 650}, {AwayTiny, 600},
         hold(AwayGone, 3300), // stay gone a full 3.3s at any gesture speed
         // The gift is already IN HIS HAND as he enters from the left.
-        carrying(ReturnPeek, 700, -200),
-        carrying(ReturnSide, 700, -125),
-        carrying(ReturnApproach, 750, -55),
-        carrying(ReturnCenter, 750, 0),
+        // The first frame is COMPLETELY off the left edge. Gift at x=-53
+        // peeks out just before the pet's rightmost paw enters.
+        carryingWalk(ReturnPeek, 1000, -420, -275),
+        carryingWalk(ReturnSide, 950, -275, -160),
+        carryingWalk(ReturnApproach, 850, -160, -70),
+        carryingWalk(ReturnCenter, 750, -70, 0),
         hold(ReturnCenter, 1300, GiftCue::Present)
     };
     switch (kind) {
@@ -159,8 +172,8 @@ inline Story idleStory(IdleAction action) {
         case IdleAction::Blink:
             return {{F00, 600},{F01, 230},{F00, 700},{F01, 230},{F00, 900}};
         case IdleAction::Peek:
-            return {{F00, 550}, hold(F02, 1550), {F00, 550},
-                    hold(F02, 1600), {F00, 1000}};
+            // One single sustained glance, not two rapid look-back cycles.
+            return {{F00, 650}, hold(F02, 2050), hold(F00, 1250)};
         case IdleAction::Smile:
             return {{F00, 500},hold(F17, 1100),hold(F04, 1000),
                     hold(F17, 1100),{F00, 1100}};
@@ -171,8 +184,9 @@ inline Story idleStory(IdleAction action) {
             return {{F00, 550},hold(F06, 1750),hold(F09, 800),
                     hold(F06, 1600),{F00, 1050}};
         case IdleAction::Shy:
-            return {{F00, 650},hold(F08, 1850),hold(F07, 850),
-                    hold(F08, 1750),{F00, 1200}};
+            // One bashful pose, with action-only cheek blush and a small
+            // bowed-head bob. No dot/roof/dot eye switching.
+            return {{F00, 650}, shyHold(F08, 3000), {F00, 1200}};
         case IdleAction::Sleepy:
             return {{F00, 950},hold(F13, 3400),{F01, 260},
                     hold(F13, 3200),{F00, 1400}};
@@ -205,29 +219,29 @@ inline Story idleStory(IdleAction action) {
                     hold(F04, 1500),{F16, 750},hold(F04, 1200),
                     {F00, 1150}};
         case IdleAction::Indignant:
-            return {{F00, 650},hold(F12, 1600),{F05, 700},
-                    hold(F12, 1550),{F00, 1200}};
+            return {{F00, 650}, {F05, 650}, hold(F12, 2550),
+                    hold(F13, 950), {F00, 1200}};
         case IdleAction::Patrol:
-            // Whole 480px canvas traversal: actor progresses to the right
-            // edge, mirrors at the turn, walks to the left, and finally
-            // returns to its original idle anchor. Glyph grid never resizes.
+            // Continuous linear travel between gait beats. No stationary
+            // rests at either edge and no per-step ease-in/out that made
+            // the walk look like a stop-motion robot.
             return {{F00, 650},
-                    walk(IdleStepRight, 430, 0, 50),
-                    walk(IdleStepLeft, 430, 50, 105),
-                    walk(IdleStepRight, 430, 105, 160),
-                    restAt(IdleStepRight, 380, 160),
-                    walk(IdleStepLeft, 430, 160, 105, true),
-                    walk(IdleStepRight, 430, 105, 50, true),
-                    walk(IdleStepLeft, 430, 50, -5, true),
-                    walk(IdleStepRight, 430, -5, -60, true),
-                    walk(IdleStepLeft, 430, -60, -125, true),
-                    restAt(IdleStepLeft, 380, -125, true),
-                    walk(IdleStepRight, 450, -125, -75),
-                    walk(IdleStepLeft, 450, -75, -25),
-                    walk(IdleStepRight, 450, -25, 0),
-                    {F00, 1050}};
+                    walk(IdleStepRight, 620, 0, 80),
+                    walk(IdleStepLeft, 620, 80, 160),
+                    walk(IdleStepLeft, 620, 160, 85, true),
+                    walk(IdleStepRight, 620, 85, 10, true),
+                    walk(IdleStepLeft, 620, 10, -65, true),
+                    walk(IdleStepRight, 620, -65, -125, true),
+                    walk(IdleStepRight, 620, -125, -65),
+                    walk(IdleStepLeft, 620, -65, -25),
+                    walk(F00, 600, -25, 0),
+                    {F00, 1150}};
         case IdleAction::Fetch:
             return fetchStory(GiftKind::StarFly);
+        case IdleAction::WinkLeftRight:
+            // Winks belong in calm idle, once per eye, never in music.
+            return {{F00, 650}, {F09, 310}, hold(F00, 800),
+                    {F10, 310}, hold(F00, 1200)};
     }
     return {};
 }
@@ -301,10 +315,6 @@ inline Story musicStory(MusicAction action) {
             return musicBeatStory({F00, H04, H05, F16, H04, H05,
                                    F04, H04, H05, F16, H04, H05,
                                    F04, H04, H05, F16, H04, F00});
-        case MusicAction::LookToBeat:
-            return musicBeatStory({F00, F02, F02, F09, F09, F02,
-                                   F02, F10, F10, F02, F02,
-                                   F09, F09, F02, F02, F10, F10, F00});
         case MusicAction::BigDance:
             return musicBeatStory({F00, H03, BounceUp, H04,
                                    BounceDown, H05, H03, BounceUp,
@@ -323,11 +333,6 @@ inline Story musicStory(MusicAction action) {
                                    StepRight, StepLeft, StepRight, StepLeft,
                                    StepRight, StepLeft, StepRight, StepLeft,
                                    StepRight, StepLeft, StepRight, F00});
-        case MusicAction::WinkGroove:
-            return musicBeatStory({F00, F09, F09, H01, H02, F00,
-                                   F10, F10, H01, H02, F00,
-                                   F09, F09, H01, H02, F00,
-                                   F10, F10, H01, H02, F00});
     }
     return {};
 }
@@ -506,29 +511,41 @@ public:
         if (activity_ != Activity::Idle) return false;
         if (story_.isEmpty()) return true;
         const int pose = pose_;
+        const Frame &f = story_[frameIndex_];
         if (pose == AwayGone || (pose >= AwayFace && pose <= AwayReturn) ||
-            (pose >= ReturnPeek && pose <= ReturnCenter) ||
+            (pose >= ReturnPeek && pose <= ReturnApproach) ||
+            (f.moveFrom != f.moveTo) ||
             pose == IdleStepLeft || pose == IdleStepRight) return false;
-        return story_[frameIndex_].cue == GiftCue::Inactive;
+        // Present, Charge, Pulse, flying-star emotions and tears can all
+        // coexist with subtle breathing. Only physically active reactions
+        // (carrying, tossing, explosion) suspend it.
+        return f.cue != GiftCue::Carry && f.cue != GiftCue::Transfer &&
+               f.cue != GiftCue::Burst;
     }
     [[nodiscard]] MotionVisual motionVisual(qint64 nowMs) const {
         if (story_.isEmpty()) return {};
         const Frame &f = story_[frameIndex_];
         const double t = std::clamp(double(nowMs - frameStartMs_) /
                                     frameDuration(f), 0.0, 1.0);
-        // Linear motion with a subtle eased endpoint; no jump at turns.
-        const double eased = t*t*(3.0-2.0*t);
-        return {f.moveFrom + (f.moveTo - f.moveFrom) * eased,
-                f.mirror, f.streak};
+        // Constant horizontal speed across short gait frames. Each step
+        // briefly lifts the body and returns to y=0 at the next boundary.
+        const bool moving = f.moveFrom != f.moveTo;
+        const double y = moving ? -3.0*std::sin(std::numbers::pi*t)
+                         : f.blush ? 1.6*std::sin(std::numbers::pi*t) : 0.0;
+        return {f.moveFrom + (f.moveTo - f.moveFrom) * t,
+                y, f.mirror, f.streak,
+                moving && (f.pose == IdleStepLeft || f.pose == IdleStepRight),
+                f.blush};
     }
     [[nodiscard]] GiftVisual giftVisual(qint64 nowMs) const {
         if (activity_ != Activity::Idle || story_.isEmpty()) return {};
         const Frame &frame = story_[frameIndex_];
         if (frame.cue == GiftCue::Inactive) return {};
         const int ms = frameDuration(frame);
+        const auto motion = motionVisual(nowMs);
         return {frame.cue, giftKind_,
                 std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0),
-                frame.carryDx};
+                frame.cue == GiftCue::Carry ? motion.offsetX : frame.carryDx};
     }
     [[nodiscard]] int autonomousSpeed() const { return speed_; }
     [[nodiscard]] bool featuredMusic() const {

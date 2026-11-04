@@ -1,4 +1,5 @@
 #include <QPointF>
+#include <QGuiApplication>
 #include <QString>
 #include <QFile>
 #include <QTemporaryDir>
@@ -11,6 +12,7 @@
 #include "pet_animation.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "pet_sprite_cache.hpp"
 #include "pet_gift_render.hpp"
 #include "pet_tail.hpp"
 #include "crt_style.hpp"
@@ -31,7 +33,12 @@ static void close(double a, double b) {
     require(std::abs(a-b) < .001, "coordinates differ");
 }
 
-int main() {
+int main(int argc, char **argv) {
+    // Sprite raster tests use QFontDatabase. Run headless in CI while
+    // preserving the platform selected by an explicit test environment.
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
     const QString original = QStringLiteral("(づ｡◕‿‿◕｡)づ");
     require(pet::frame(pet::F00).line == original, "original face must be retained");
     require(pet::kFrontColumns == 10 && pet::kBackColumns == 11,
@@ -48,11 +55,8 @@ int main() {
                 "unexpected pose column count");
         require(p.headDx >= -3 && p.headDx <= 3, "head moves too far");
         require(p.headDy >= -5 && p.headDy <= 5, "head moves too far");
-        if (id >= pet::ReturnPeek && id <= pet::ReturnApproach)
-            require(p.bodyDx <= -55 && p.bodyDx >= -200,
-                    "front-facing side entrance must come from left");
-        else
-            require(p.bodyDx >= -9 && p.bodyDx <= 9, "body moves too far");
+        require(p.bodyDx >= -9 && p.bodyDx <= 9,
+                "pose body must use fixed grid, movement belongs to Animator");
         require(p.bodyDy >= -6 && p.bodyDy <= 6, "body moves too far");
         if (p.back) {
             const bool historicMusicBack = id >= pet::B00 && id <= pet::B02;
@@ -124,13 +128,18 @@ int main() {
             "gift-specific pose IDs must append after existing set");
     require(pet::frame(pet::AwayGone).hidden,
             "pet must fully disappear between departure and side return");
-    require(pet::frame(pet::ReturnPeek).bodyDx <
-            pet::frame(pet::ReturnSide).bodyDx &&
-            pet::frame(pet::ReturnSide).bodyDx <
-            pet::frame(pet::ReturnApproach).bodyDx &&
-            pet::frame(pet::ReturnApproach).bodyDx <
-            pet::frame(pet::ReturnCenter).bodyDx,
-            "return must move left-to-right, never backwards");
+    const auto returnStory = pet::fetchStory(pet::GiftKind::StarFly);
+    int lastTo = -420, returnSteps = 0;
+    for (const auto &frame : returnStory) {
+        if (frame.cue != pet::GiftCue::Carry) continue;
+        require(frame.moveFrom == lastTo && frame.moveTo > frame.moveFrom,
+                "return motion must be continuous with no teleporting");
+        lastTo = frame.moveTo;
+        ++returnSteps;
+    }
+    require(returnSteps == 4 && lastTo == 0 &&
+            pet::giftFlight(0.0, false).x() > 0,
+            "entire pet must emerge from outside left edge with a gift");
     require(pet::frame(pet::ReturnPeek).line ==
             QStringLiteral("(づ｡◔‿‿◔｡)っ"),
             "return must face toward the right instead of walking backwards");
@@ -185,7 +194,7 @@ int main() {
             celebration[1].absoluteDuration,
             "celebration happiness must last at high speed settings");
 
-    require(pet::kIdleActionCount == 14, "new idle patrol/fetch actions missing");
+    require(pet::kIdleActionCount == 15, "idle one-shot winks must be included");
     const auto patrol = pet::idleStory(pet::IdleAction::Patrol);
     const auto fetch = pet::idleStory(pet::IdleAction::Fetch);
     require(pet::duration(patrol) >= 4500 && pet::duration(fetch) >= 7000,
@@ -288,8 +297,9 @@ int main() {
         require(story[vanishAt].durationMs >= 3000,
                 "pet must stay gone visibly before returning");
         require(carried == 4 && story[returnAt].cue == pet::GiftCue::Carry &&
-                story[returnAt].carryDx == -200,
-                "gift should be visible in the pet's hand on first reentry");
+                story[returnAt].moveFrom <= -410 &&
+                story[returnAt].moveTo > story[returnAt].moveFrom,
+                "return starts entirely offscreen, gift and pet enter smoothly");
         if (variant == pet::GiftKind::StarFly ||
             variant == pet::GiftKind::ArcFly)
             require(handoff == 1 && flew == 1,
@@ -323,13 +333,14 @@ int main() {
             sleepy[1].absoluteDuration && sleepy[1].durationMs >= 3200,
             "sleeping must be visibly long even at high animation speed");
     const auto peek = pet::idleStory(pet::IdleAction::Peek);
-    require(peek[1].absoluteDuration && peek[3].absoluteDuration &&
-            peek[1].durationMs >= 1400,
-            "side glance should be held instead of flickering");
+    require(peek.size() == 3 && peek[1].pose == pet::F02 &&
+            peek[1].absoluteDuration && peek[1].durationMs >= 1800,
+            "side glance must happen ONCE and return to idle");
     const auto shy = pet::idleStory(pet::IdleAction::Shy);
-    require(shy[1].absoluteDuration && shy[3].absoluteDuration &&
-            shy[1].durationMs >= 1600,
-            "shy eyes should linger before returning to neutral");
+    require(shy.size() == 3 && shy[1].pose == pet::F08 &&
+            shy[1].absoluteDuration && shy[1].durationMs >= 2800 &&
+            shy[1].blush,
+            "Shy must hold one bashful pose and blush, not cycle eyes");
     require(pet::frame(pet::SadCry).line == QStringLiteral("(づ｡•﹏﹏•｡)づ"),
             "crying uses dots rather than semicolons obscuring drawn tears");
 
@@ -364,18 +375,21 @@ int main() {
         require(step.pose != pet::F17 && step.pose != pet::F16,
                 "rapid alternate mouth shapes should not appear in baseline groove");
     }
-    require(pet::kMusicActionCount == 11, "featured music set incomplete");
-    for (const auto action : {pet::MusicAction::LookToBeat,
-                              pet::MusicAction::WinkGroove}) {
-        const auto story = pet::musicStory(action);
-        for (int i = 1; i < story.size(); ++i) {
-            if (story[i].pose == pet::F09 || story[i].pose == pet::F10)
-                require(story[i-1].pose == story[i].pose ||
-                        (i+1 < story.size() &&
-                         story[i+1].pose == story[i].pose),
-                        "musical winks should be held at least two beats");
-        }
+    require(pet::kMusicActionCount == 9,
+            "LookToBeat and WinkGroove must be removed from music");
+    const auto winks = pet::idleStory(pet::IdleAction::WinkLeftRight);
+    int leftWinks = 0, rightWinks = 0;
+    for (const auto &f : winks) {
+        leftWinks += f.pose == pet::F09;
+        rightWinks += f.pose == pet::F10;
     }
+    require(leftWinks == 1 && rightWinks == 1,
+            "idle wink should blink each eye only once");
+    const auto indignation = pet::idleStory(pet::IdleAction::Indignant);
+    int angryFrames = 0;
+    for (const auto &f : indignation) angryFrames += f.pose == pet::F12;
+    require(angryFrames == 1,
+            "indignation should not cycle back to angry eyes repeatedly");
     for (int n = 0; n < pet::kMusicActionCount; ++n) {
         const auto story = pet::musicStory(static_cast<pet::MusicAction>(n));
         require(pet::duration(story) >= 3000, "music action too short");
@@ -730,6 +744,36 @@ int main() {
     require(noGift.pixelColor(392, 247).alpha() == 0,
             "gift renderer must do nothing when cue is None");
 
+    // Pose Unicode shaping (10 fixed cells and multiple thick strokes)
+    // is cached per appearance and tail state. The active frame only
+    // translates/mirrors a supersampled bitmap, without re-shaping text.
+    pet::SpriteCache spriteCache;
+    const pet::JoyTail noWag;
+    spriteCache.configure(QStringLiteral("DejaVu Sans Mono"), original,
+                          QColor("#B0FFBB"), 43, 25);
+    const auto &firstSprite = spriteCache.sprite(pet::F00, noWag);
+    require(firstSprite.width() == pet::SpriteCache::kCanvasWidth &&
+            firstSprite.height() == pet::SpriteCache::kSpriteHeight,
+            "cached sprite must stay at original pet resolution");
+    const auto spriteBuilds = spriteCache.buildCount();
+    require(spriteBuilds == 1 && spriteCache.cachedPoses() == 1,
+            "first sprite should be rendered only once");
+    const auto &reuse = spriteCache.sprite(pet::F00, noWag);
+    require(&firstSprite == &reuse && spriteCache.buildCount() == spriteBuilds,
+            "same pose and tail state must reuse the cached raster");
+    const auto &otherSprite = spriteCache.sprite(pet::F02, noWag);
+    require(!otherSprite.isNull(), "second sprite must rasterize");
+    require(spriteCache.buildCount() == spriteBuilds + 1,
+            "different eye pose should have its own reusable raster");
+    spriteCache.configure(QStringLiteral("DejaVu Sans Mono"), original,
+                          QColor("#B0FFBB"), 43, 25);
+    require(spriteCache.cachedPoses() == 2,
+            "unchanged user appearance should not invalidate sprites");
+    spriteCache.configure(QStringLiteral("DejaVu Sans Mono"), original,
+                          QColor("#B0FFBB"), 43, 65);
+    require(spriteCache.cachedPoses() == 0,
+            "changing font stroke must invalidate cached glyphs");
+
     // Matrix input has no key values and produces two independently rising
     // columns without changing the pet renderer or changing fonts.
     MatrixRain matrix;
@@ -756,6 +800,15 @@ int main() {
         if (hasRedPixels) break;
     }
     require(hasRedPixels, "Matrix must use selected user phosphor color");
+    const auto compactRain = matrix.stripImage(QColor("#FF0000"), 90);
+    require(compactRain.width() == 108 &&
+            compactRain.height() == MatrixRain::CanvasHeight,
+            "live Matrix source must only rasterize its 108px strip");
+    for (int y = 0; y < MatrixRain::CanvasHeight; y += 4)
+        for (int x = MatrixRain::StripX; x < MatrixRain::CanvasWidth; x += 4)
+            require(compactRain.pixelColor(x - MatrixRain::StripX, y) ==
+                    redRain.pixelColor(x, y),
+                    "cropped Matrix glyphs must match original full-canvas rendering");
     for (int t = 80; t <= 7000; t += 40)
         matrix.advance(t, false);
     require(!matrix.active(), "Matrix glyphs should fade and vanish");

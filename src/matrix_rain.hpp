@@ -61,12 +61,29 @@ public:
     [[nodiscard]] bool active() const { return !drops_.isEmpty(); }
     [[nodiscard]] int glyphCount() const { return drops_.size(); }
 
-    QImage image(QColor phosphor = QColor("#B8FFBF"), int brightness = 100) const {
-        QImage layer(CanvasWidth, CanvasHeight,
-                     QImage::Format_ARGB32_Premultiplied);
+    static constexpr int StripX = 372;
+    static constexpr int StripWidth = CanvasWidth - StripX; // 108px
+
+    // Legacy complete frame for diagnostics/tests. The live widget uses
+    // stripImage(), which applies the SAME vector glyphs and CRT settings
+    // to only the 108px strip that actually contains the Matrix symbols.
+    [[nodiscard]] QImage image(QColor phosphor = QColor("#B8FFBF"),
+                               int brightness = 100) const {
+        return paintImage(0, CanvasWidth, phosphor, brightness);
+    }
+
+    [[nodiscard]] QImage stripImage(QColor phosphor = QColor("#B8FFBF"),
+                                    int brightness = 100) const {
+        return paintImage(StripX, StripWidth, phosphor, brightness);
+    }
+
+    [[nodiscard]] QImage paintImage(int xOrigin, int width, QColor phosphor,
+                                    int brightness) const {
+        QImage layer(width, CanvasHeight, QImage::Format_ARGB32_Premultiplied);
         layer.fill(Qt::transparent);
         QPainter p(&layer);
         p.setRenderHint(QPainter::Antialiasing, true);
+        p.translate(-xOrigin, 0);
         for (const Drop &drop : drops_) {
             const qreal fade = std::clamp((drop.y - VanishY) / 80.0, 0.0, 1.0);
             if (fade <= 0.0) continue;

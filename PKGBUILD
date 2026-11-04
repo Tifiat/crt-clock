@@ -1,6 +1,6 @@
 # Maintainer: Tifiat
 pkgname=crt-clock
-pkgver=0.6.2.r1
+pkgver=0.6.3.r1
 pkgrel=1
 pkgdesc="Lightweight Qt6 perspective clock and animated ASCII companion for XFCE/X11"
 arch=('x86_64')
@@ -13,7 +13,7 @@ sha256sums=('SKIP')
 
 pkgver() {
   cd "$srcdir/crt-clock"
-  printf '0.6.2.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  printf '0.6.3.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
 build() {

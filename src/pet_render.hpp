@@ -37,6 +37,7 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
     const Pose pose = frame(poseId);
     if (pose.hidden) return;
     p.save();
+    p.translate(0, motion.offsetY);
     if (motion.mirror) {
         // True visual turn: reflect only the actor during the return leg
         // of Patrol, never the whole CRT canvas, clock or particles.
@@ -129,6 +130,22 @@ inline void paint(QPainter &p, const QRectF &area, const QString &family,
         p.setBrush(color);
         p.drawPolygon(sparkle);
         p.restore();
+    }
+    p.restore();
+}
+
+// Small cheek blush, not permanent Idle lines. Only enabled by
+// IdleAction::Shy while its single bashful face is held.
+inline void paintShyBlush(QPainter &p, const QRectF &area, QColor color) {
+    p.save();
+    color.setAlphaF(color.alphaF() * .56);
+    p.setPen(QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap));
+    const qreal c = area.center().x();
+    const qreal y = area.center().y() + 12;
+    for (qreal sign : {-1.0, 1.0}) {
+        const qreal x = c + sign * 90;
+        p.drawLine(QPointF(x-5, y-2), QPointF(x-2, y+2));
+        p.drawLine(QPointF(x+1, y-2), QPointF(x+4, y+2));
     }
     p.restore();
 }

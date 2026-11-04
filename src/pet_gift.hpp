@@ -20,7 +20,7 @@ struct GiftVisual {
     GiftCue cue = GiftCue::Inactive;
     GiftKind kind = GiftKind::StarFly;
     double progress = 0.0;
-    int carryDx = 0; // the carried gift follows each approaching body pose
+    double carryDx = 0.0; // the carried gift follows each approaching body pose
     [[nodiscard]] bool active() const { return cue != GiftCue::Inactive; }
 };
 

@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
+#include <QDebug>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
@@ -38,6 +39,7 @@
 #include "crt_style.hpp"
 #include "pet_poses.hpp"
 #include "pet_render.hpp"
+#include "pet_sprite_cache.hpp"
 #include "pet_gift_render.hpp"
 #include "pet_tail.hpp"
 #include "clock_flicker.hpp"
@@ -212,58 +214,163 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
     p.drawText(r, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
-QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
-                  const pet::JoyTail &tail, int musicStreamPhase,
-                  int idleBreathPhase, const pet::GiftVisual &gift,
-                  const pet::MotionVisual &motion) {
-    QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
-    glyphs.fill(Qt::transparent);
-    QPainter text(&glyphs);
-    text.setRenderHint(QPainter::Antialiasing, true);
-    text.setRenderHint(QPainter::TextAntialiasing, true);
+// Cache the whole clock/date/background CRT composite. Only the minute,
+// clock flicker, or an appearance-setting change invalidates this expensive
+// full-size phosphor/glow image, not each paw/motion frame.
+struct ClockCacheKey {
+    QString minute;
+    QString clockFont;
+    QColor green, dim, background;
+    int timeSize = 0, dateSize = 0, brightness = 0;
+    int backgroundAlpha = 0, glow = 0, pixelScale = 0;
+    bool border = false;
+    double clockIntensity = 0.0;
+    bool operator==(const ClockCacheKey &) const = default;
+};
 
-    QFont time(cfg.clockFont);
-    time.setPixelSize(cfg.timeFontSize);
-    time.setWeight(QFont::Bold);
-    QFont date(cfg.clockFont);
-    date.setPixelSize(cfg.dateFontSize);
-    date.setWeight(QFont::Bold);
-    const auto now = QDateTime::currentDateTime();
-    QColor timeColor = cfg.green;
-    timeColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
-    QColor dateColor = cfg.dim.lighter(130);
-    dateColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * clockIntensity, 0.0, 1.0));
-    QColor petColor = cfg.green;
-    petColor.setAlphaF(cfg.brightness / 100.0);
+class CanvasCache {
+public:
+    [[nodiscard]] QImage render(const Settings &cfg, int pose,
+                                double clockIntensity, const pet::JoyTail &tail,
+                                int musicStreamPhase, int idleBreathPhase,
+                                const pet::GiftVisual &gift,
+                                const pet::MotionVisual &motion) {
+        const auto now = QDateTime::currentDateTime();
+        const ClockCacheKey key{
+            now.toString("yyyyMMddHHmm"), cfg.clockFont,
+            cfg.green, cfg.dim, cfg.background,
+            cfg.timeFontSize, cfg.dateFontSize, cfg.brightness,
+            cfg.backgroundAlpha, cfg.glow, cfg.pixelScale,
+            cfg.frame, clockIntensity
+        };
+        if (!validClock_ || !(key == clockKey_)) {
+            clockKey_ = key;
+            validClock_ = true;
+            rebuildClock(cfg, now, clockIntensity);
+        }
 
-    centered(text, QRectF(12, 27, 456, 125), now.toString("HH:mm"), time, timeColor);
-    centered(text, QRectF(14, 154, 452, 52),
-             QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
-             date, dateColor);
-    // Leave the right-hand side clear for gifts and the music/typing strip.
-    // The perspective handles, clock/date geometry and font grid stay put.
-    const QRectF petArea(-40, 217, 460, 82);
-    const bool stockPet = cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ");
-    text.save();
-    if (stockPet && idleBreathPhase >= 0)
-        text.translate(0, idleBreathPhase == 2 ? -1 : (idleBreathPhase == 5 ? 1 : 0));
-    pet::paint(text, petArea, cfg.petFont,
-               cfg.pet, pet::visiblePose(pose, gift), petColor,
-               cfg.petFontSize, cfg.petStroke, tail, motion);
-    text.restore();
-    if (stockPet) {
-        // Gift effects and the musical stream are independent vector layers.
-        // Nothing decorates ordinary idle, except gentle body breathing.
-        pet::paintGestureStreak(text, petArea, petColor, motion.streak);
-        pet::paintGiftEffect(text, gift, petColor);
-        pet::paintMusicStream(text, petColor, musicStreamPhase);
+        const bool stockPet =
+            cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ");
+        QColor petColor = cfg.green;
+        petColor.setAlphaF(cfg.brightness / 100.0);
+
+        sprites_.configure(cfg.petFont, cfg.pet, petColor,
+                           cfg.petFontSize, cfg.petStroke);
+
+        // Most activity never paints higher than y=192. Processing the CRT
+        // phosphor/glow on 480x128 instead of 480x320 cuts repeated
+        // scaling costs substantially without changing FPS/effect quality.
+        const bool highGift = stockPet &&
+            (gift.cue == pet::GiftCue::Transfer ||
+             gift.cue == pet::GiftCue::FlyStraight ||
+             gift.cue == pet::GiftCue::FlyArc ||
+             gift.cue == pet::GiftCue::Burst);
+        constexpr int top = pet::SpriteCache::kCropTop;
+        const int cropTop = highGift ? 0 : top;
+        const bool absent = stockPet && pet::frame(pose).hidden &&
+                            !gift.active() && musicStreamPhase < 0;
+        if (absent) return clockFrame_;
+
+        QImage moving(W, H - cropTop, QImage::Format_ARGB32_Premultiplied);
+        moving.fill(Qt::transparent);
+        QPainter text(&moving);
+        text.setRenderHint(QPainter::Antialiasing, true);
+        text.setRenderHint(QPainter::TextAntialiasing, true);
+        text.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        text.translate(0, -cropTop);
+
+        // Use a cached supersampled Unicode bitmap. Only the inexpensive
+        // position/mirror/vertical-breath transform changes between ticks.
+        if (!stockPet || !pet::frame(pose).hidden) {
+            text.save();
+            const int breath = stockPet && idleBreathPhase >= 0 ?
+                (idleBreathPhase == 2 ? -1 : (idleBreathPhase == 5 ? 1 : 0)) : 0;
+            // The historic IdleStep poses contain a +/-9px body offset.
+            // That was fine for stepping in place, but caused ~18px
+            // teleports whenever the walk exchanged left/right feet.
+            const int poseShift = stockPet && motion.gait
+                ? pet::frame(pose).bodyDx : 0;
+            const double correctedX = motion.offsetX +
+                (motion.mirror ? poseShift : -poseShift);
+            text.translate(correctedX, motion.offsetY + breath);
+            if (motion.mirror && stockPet) {
+                constexpr qreal pivot = 190.0; // QRectF(-40,217,460,82).center().x()
+                text.translate(pivot, 0);
+                text.scale(-1.0, 1.0);
+                text.translate(-pivot, 0);
+            }
+            text.drawImage(QPointF(0, top),
+                           sprites_.sprite(pet::visiblePose(pose, gift), tail));
+            text.restore();
+        }
+
+        if (stockPet) {
+            if (motion.blush)
+                pet::paintShyBlush(text, QRectF(-40, 217, 460, 82), petColor);
+            pet::paintGestureStreak(text, QRectF(-40, 217, 460, 82),
+                                    petColor, motion.streak);
+            pet::paintGiftEffect(text, gift, petColor);
+            pet::paintMusicStream(text, petColor, musicStreamPhase);
+        }
+        text.end();
+
+        const QImage movingCrt = crtComposite(moving, Qt::transparent, 0,
+                                             cfg.glow, cfg.pixelScale, false,
+                                             cfg.dim);
+        QImage output = clockFrame_.copy();
+        QPainter composite(&output);
+        composite.drawImage(QPoint(0, cropTop), movingCrt);
+        if (cfg.frame) {
+            // The frame always remains above flying gifts at the edge,
+            // as it did in the original monolithic CRT composite.
+            QColor rim = cfg.dim;
+            rim.setAlpha(135);
+            composite.setPen(QPen(rim, 1));
+            composite.setBrush(Qt::NoBrush);
+            composite.drawRect(QRectF(1, 1, W - 2, H - 2));
+        }
+        return output;
     }
-    text.end();
 
-    // Final scanlines are drawn AFTER perspective mapping, at screen scale.
-    return crtComposite(glyphs, cfg.background, cfg.backgroundAlpha, cfg.glow,
-                        cfg.pixelScale, cfg.frame, cfg.dim);
-}
+    [[nodiscard]] quint64 clockBuildCount() const { return clockBuilds_; }
+    [[nodiscard]] quint64 spriteBuildCount() const { return sprites_.buildCount(); }
+
+private:
+    void rebuildClock(const Settings &cfg, const QDateTime &now,
+                      double intensity) {
+        QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
+        glyphs.fill(Qt::transparent);
+        QPainter painter(&glyphs);
+        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        QFont time(cfg.clockFont);
+        time.setPixelSize(cfg.timeFontSize);
+        time.setWeight(QFont::Bold);
+        QFont date(cfg.clockFont);
+        date.setPixelSize(cfg.dateFontSize);
+        date.setWeight(QFont::Bold);
+        QColor timeColor = cfg.green;
+        timeColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * intensity, 0.0, 1.0));
+        QColor dateColor = cfg.dim.lighter(130);
+        dateColor.setAlphaF(std::clamp(cfg.brightness / 100.0 * intensity, 0.0, 1.0));
+        centered(painter, QRectF(12, 27, 456, 125),
+                 now.toString("HH:mm"), time, timeColor);
+        centered(painter, QRectF(14, 154, 452, 52),
+                 QLocale(QLocale::English).toString(
+                    now.date(), "ddd, dd MMM yyyy").toUpper(),
+                 date, dateColor);
+        painter.end();
+
+        clockFrame_ = crtComposite(glyphs, cfg.background, cfg.backgroundAlpha,
+                                  cfg.glow, cfg.pixelScale, cfg.frame, cfg.dim);
+        ++clockBuilds_;
+    }
+
+    ClockCacheKey clockKey_;
+    bool validClock_ = false;
+    QImage clockFrame_;
+    pet::SpriteCache sprites_;
+    quint64 clockBuilds_ = 0;
+};
 
 // Read only the playback state over MPRIS; never capture audio or sound.
 bool musicIsPlaying() {
@@ -395,6 +502,22 @@ public:
             update();
         }
         if (dirty) redraw();
+        if (profileEnabled_ && now >= nextProfileReport_) {
+            nextProfileReport_ = now + 6000;
+            const auto mean = [](quint64 total, quint64 count) {
+                return count ? double(total) / count / 1000000.0 : 0.0;
+            };
+            qInfo().nospace()
+                << "[crt-clock perf] redraws=" << renders_
+                << " avgCanvasMs=" << mean(renderTimeNs_, renders_)
+                << " paints=" << paints_
+                << " avgPaintMs=" << mean(paintTimeNs_, paints_)
+                << " matrixRebuilds=" << matrixRebuilds_
+                << " clockBuilds=" << canvas_.clockBuildCount()
+                << " cachedSpritesBuilt=" << canvas_.spriteBuildCount();
+            renders_ = paints_ = matrixRebuilds_ = 0;
+            renderTimeNs_ = paintTimeNs_ = 0;
+        }
     }
 
     void start() { editing_ = false; applyMode(); }
@@ -724,7 +847,7 @@ public:
         };
 
         addTab(QStringLiteral("Idle"),
-               QStringLiteral("Дыхание в ожидании и все 14 самостоятельных Idle-сцен."),
+               QStringLiteral("Дыхание в ожидании и все 15 самостоятельных Idle-сцен."),
                {QStringLiteral("Дыхание / ожидание"),
                 QStringLiteral("Blink / моргание"),
                 QStringLiteral("Peek / взгляд в сторону"),
@@ -739,12 +862,13 @@ public:
                 QStringLiteral("Celebrate / радуется"),
                 QStringLiteral("Indignant / негодование"),
                 QStringLiteral("Patrol / ходит туда-сюда"),
-                QStringLiteral("Fetch / уходит и приносит звезду")},
+                QStringLiteral("Fetch / уходит и приносит звезду"),
+                QStringLiteral("Wink / один раз левым и правым глазом")},
                [this](int i) {
                    requestAnimationPreview(QStringLiteral("idle"), i - 1);
                });
         addTab(QStringLiteral("Music"),
-               QStringLiteral("Базовое покачивание и все 11 отдельных музыкальных танцев."),
+               QStringLiteral("Базовое покачивание и 9 музыкальных танцев без подмигиваний."),
                {QStringLiteral("Groove / базовое покачивание"),
                 QStringLiteral("HeadNod / кивает"),
                 QStringLiteral("TailWag / спиной и хвостом"),
@@ -752,11 +876,9 @@ public:
                 QStringLiteral("Bounce / прыжки"),
                 QStringLiteral("Sway / раскачивание"),
                 QStringLiteral("HappyDance / радуется"),
-                QStringLiteral("LookToBeat / взгляд в ритм"),
                 QStringLiteral("BigDance / большой танец"),
                 QStringLiteral("EyesClosedNotes / закрытые глаза"),
-                QStringLiteral("SideStep / шаги в стороны"),
-                QStringLiteral("WinkGroove / подмигивание")},
+                QStringLiteral("SideStep / шаги в стороны")},
                [this](int i) {
                    requestAnimationPreview(QStringLiteral("music"), i - 1);
                });
@@ -819,6 +941,8 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *) override {
+        QElapsedTimer timer;
+        if (profileEnabled_) timer.start();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -833,7 +957,13 @@ protected:
                                (elapsed_.elapsed() - rippleStart_) /
                                double(perspective::sweepDurationMs(cfg_.scanlineSpeed)),
                              cfg_.rippleStrength);
-        if (!editing_) return;
+        if (!editing_) {
+            if (profileEnabled_) {
+                ++paints_;
+                paintTimeNs_ += timer.nsecsElapsed();
+            }
+            return;
+        }
         QPolygonF to = perspective::outline(cfg_.quad);
         for (QPointF &point : to) point -= origin;
         p.setPen(QPen(QColor("#7BFFAA"), 2, Qt::DashLine));
@@ -868,7 +998,11 @@ protected:
         QFont f(cfg_.clockFont); f.setPixelSize(15); p.setFont(f);
         p.drawText(top.adjusted(12, 6, -6, -6), Qt::AlignLeft | Qt::TextWordWrap,
             QStringLiteral("CRT-CLOCK / КАЛИБРОВКА\n"
-                           "8 крайних: деформация • центр 9: перенос • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));
+                           "8 крайних: деформация • центр 9: перенос • Enter: сохранить • Esc: отмена • B: фон • F: рамка"));        if (profileEnabled_) {
+            ++paints_;
+            paintTimeNs_ += timer.nsecsElapsed();
+        }
+
     }
 
     void mousePressEvent(QMouseEvent *e) override {
@@ -977,23 +1111,48 @@ private:
 
     void rebuildMatrix() {
         if (matrix_.active()) {
-            const QImage glyphs = matrix_.image(cfg_.green, cfg_.brightness);
-            // Run the same pixel scale and phosphor glow as the clock/pet.
-            // Static scanlines, aperture grille and ripple are shared by both
-            // layers in paintEvent after the perspective transformation.
-            matrixFrame_ = crtComposite(glyphs, Qt::transparent, 0,
-                                         cfg_.glow, cfg_.pixelScale, false,
-                                         cfg_.dim);
+            // Only the far-right 108px actually contains typing glyphs.
+            // CRT glow on this strip is about 4.4x cheaper than processing
+            // all 480 columns every tick while the user types.
+            const QImage glyphs = matrix_.stripImage(cfg_.green, cfg_.brightness);
+            const QImage strip = crtComposite(glyphs, Qt::transparent, 0,
+                                              cfg_.glow, cfg_.pixelScale, false,
+                                              cfg_.dim);
+            QImage full(W, H, QImage::Format_ARGB32_Premultiplied);
+            full.fill(Qt::transparent);
+            QPainter p(&full);
+            p.drawImage(QPoint(MatrixRain::StripX, 0), strip);
+            p.end();
+            matrixFrame_ = std::move(full);
         } else {
             matrixFrame_ = QImage();
         }
+        if (profileEnabled_) ++matrixRebuilds_;
+        matrixGreen_ = cfg_.green;
+        matrixBrightness_ = cfg_.brightness;
+        matrixGlow_ = cfg_.glow;
+        matrixPixelScale_ = cfg_.pixelScale;
     }
     void redraw() {
-        frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_,
-                            musicStreamPhase_, idleBreathPhase_,
-                            animator_.giftVisual(elapsed_.elapsed()),
-                            animator_.motionVisual(elapsed_.elapsed()));
-        if (matrix_.active()) rebuildMatrix();
+        QElapsedTimer timer;
+        if (profileEnabled_) timer.start();
+        frame_ = canvas_.render(cfg_, animator_.pose(), clockIntensity_,
+                                joyTail_, musicStreamPhase_, idleBreathPhase_,
+                                animator_.giftVisual(elapsed_.elapsed()),
+                                animator_.motionVisual(elapsed_.elapsed()));
+        // Matrix content already rebuilds in matrix_.advance(). Animation
+        // redraws must NOT redo a second expensive CRT glow pass on typing
+        // glyphs unless their visual settings have actually changed.
+        if (matrix_.active() &&
+            (matrixGreen_ != cfg_.green ||
+             matrixBrightness_ != cfg_.brightness ||
+             matrixGlow_ != cfg_.glow ||
+             matrixPixelScale_ != cfg_.pixelScale))
+            rebuildMatrix();
+        if (profileEnabled_) {
+            ++renders_;
+            renderTimeNs_ += timer.nsecsElapsed();
+        }
         update();
     }
     void applyMode() {
@@ -1017,9 +1176,14 @@ private:
     Settings cfg_;
     perspective::Handles before_{};
     QImage frame_;
+    CanvasCache canvas_;
     MatrixRain matrix_;
     pet::JoyTail joyTail_;
     QImage matrixFrame_;
+    QColor matrixGreen_;
+    int matrixBrightness_ = -1;
+    int matrixGlow_ = -1;
+    int matrixPixelScale_ = -1;
     QTimer tick_;
     QElapsedTimer elapsed_;
     std::unique_ptr<KeyboardActivity> keyboard_;
@@ -1041,6 +1205,13 @@ private:
     QDialog *settingsWindow_ = nullptr;
     QDialog *animationSettingsWindow_ = nullptr;
     quint64 previewSerial_ = 0;
+    const bool profileEnabled_ = qEnvironmentVariableIsSet("CRT_CLOCK_PROFILE");
+    qint64 nextProfileReport_ = 6000;
+    quint64 renders_ = 0;
+    quint64 paints_ = 0;
+    quint64 matrixRebuilds_ = 0;
+    quint64 renderTimeNs_ = 0;
+    quint64 paintTimeNs_ = 0;
     bool editing_ = false;
 };
 }
