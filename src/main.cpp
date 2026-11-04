@@ -32,6 +32,7 @@
 #include <functional>
 #include "pet_animation.hpp"
 #include "perspective.hpp"
+#include "perspective_raster_cache.hpp"
 #include "keyboard_activity.hpp"
 #include <QHBoxLayout>
 #include <QColorDialog>
@@ -512,11 +513,14 @@ public:
                 << " avgCanvasMs=" << mean(renderTimeNs_, renders_)
                 << " paints=" << paints_
                 << " avgPaintMs=" << mean(paintTimeNs_, paints_)
+                << " warpRebuilds=" << warpRebuilds_
+                << " avgWarpMs=" << mean(warpTimeNs_, warpRebuilds_)
+                << " cachedWarpMaps=" << perspectiveCache_.buildCount()
                 << " matrixRebuilds=" << matrixRebuilds_
                 << " clockBuilds=" << canvas_.clockBuildCount()
                 << " cachedSpritesBuilt=" << canvas_.spriteBuildCount();
-            renders_ = paints_ = matrixRebuilds_ = 0;
-            renderTimeNs_ = paintTimeNs_ = 0;
+            renders_ = paints_ = matrixRebuilds_ = warpRebuilds_ = 0;
+            renderTimeNs_ = paintTimeNs_ = warpTimeNs_ = 0;
         }
     }
 
@@ -947,11 +951,47 @@ protected:
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         const QPointF origin(geometry().topLeft());
-        perspective::draw(p, frame_, cfg_.quad, origin);
-        if (matrix_.active()) perspective::draw(p, matrixFrame_, cfg_.quad, origin);
-        perspective::scanlines(p, cfg_.quad, origin,
-                              cfg_.scanlines ? cfg_.scanlineStrength : 0);
-        perspective::grille(p, cfg_.quad, origin, cfg_.grilleStrength);
+
+        // The projective geometry is recomputed only after perspective
+        // calibration or window geometry changes. For each new animated
+        // frame, bilinear sampling uses the cached inverse map. A ripple-only
+        // repaint simply blits the previously warped image.
+        const bool geometryChanged =
+            perspectiveCache_.prepare(size(), cfg_.quad, origin);
+        if (geometryChanged) {
+            projectionDirty_ = true;
+            staticOverlayDirty_ = true;
+        }
+        if (projectionDirty_) {
+            QElapsedTimer warpTimer;
+            if (profileEnabled_) warpTimer.start();
+            projectedFrame_ = perspectiveCache_.render(
+                frame_, matrix_.active() ? matrixFrame_ : QImage());
+            projectionDirty_ = false;
+            if (profileEnabled_) {
+                ++warpRebuilds_;
+                warpTimeNs_ += warpTimer.nsecsElapsed();
+            }
+        }
+        p.drawImage(QPointF(0, 0), projectedFrame_);
+
+        const int scanStrength =
+            cfg_.scanlines ? cfg_.scanlineStrength : 0;
+        if (staticOverlayDirty_ ||
+            cachedScanlineStrength_ != scanStrength ||
+            cachedGrilleStrength_ != cfg_.grilleStrength) {
+            staticOverlayDirty_ = false;
+            cachedScanlineStrength_ = scanStrength;
+            cachedGrilleStrength_ = cfg_.grilleStrength;
+            staticOverlay_ = QImage(size(), QImage::Format_ARGB32_Premultiplied);
+            staticOverlay_.fill(Qt::transparent);
+            QPainter staticPainter(&staticOverlay_);
+            staticPainter.setRenderHint(QPainter::Antialiasing, true);
+            perspective::scanlines(staticPainter, cfg_.quad, origin, scanStrength);
+            perspective::grille(staticPainter, cfg_.quad, origin,
+                                cfg_.grilleStrength);
+        }
+        p.drawImage(QPointF(0, 0), staticOverlay_);
         perspective::ripple(p, cfg_.quad, origin,
                              rippleStart_ < 0 ? -1.0 :
                                (elapsed_.elapsed() - rippleStart_) /
@@ -1127,6 +1167,7 @@ private:
         } else {
             matrixFrame_ = QImage();
         }
+        projectionDirty_ = true;
         if (profileEnabled_) ++matrixRebuilds_;
         matrixGreen_ = cfg_.green;
         matrixBrightness_ = cfg_.brightness;
@@ -1140,6 +1181,7 @@ private:
                                 joyTail_, musicStreamPhase_, idleBreathPhase_,
                                 animator_.giftVisual(elapsed_.elapsed()),
                                 animator_.motionVisual(elapsed_.elapsed()));
+        projectionDirty_ = true;
         // Matrix content already rebuilds in matrix_.advance(). Animation
         // redraws must NOT redo a second expensive CRT glow pass on typing
         // glyphs unless their visual settings have actually changed.
@@ -1177,6 +1219,13 @@ private:
     perspective::Handles before_{};
     QImage frame_;
     CanvasCache canvas_;
+    perspective::RasterCache perspectiveCache_;
+    QImage projectedFrame_;
+    QImage staticOverlay_;
+    bool projectionDirty_ = true;
+    bool staticOverlayDirty_ = true;
+    int cachedScanlineStrength_ = -1;
+    int cachedGrilleStrength_ = -1;
     MatrixRain matrix_;
     pet::JoyTail joyTail_;
     QImage matrixFrame_;
@@ -1210,8 +1259,10 @@ private:
     quint64 renders_ = 0;
     quint64 paints_ = 0;
     quint64 matrixRebuilds_ = 0;
+    quint64 warpRebuilds_ = 0;
     quint64 renderTimeNs_ = 0;
     quint64 paintTimeNs_ = 0;
+    quint64 warpTimeNs_ = 0;
     bool editing_ = false;
 };
 }
