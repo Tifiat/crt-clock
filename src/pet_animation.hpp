@@ -90,7 +90,7 @@ inline Story fetchStory(GiftKind kind) {
     Story story = {
         {F00, 750}, {IdleStepLeft, 650}, {AwayFace, 730},
         {AwayNear, 680}, {AwayFar, 650}, {AwayTiny, 600},
-        {AwayGone, 3300}, // visibly absent before reappearing
+        hold(AwayGone, 3300), // stay gone a full 3.3s at any gesture speed
         // The gift is already IN HIS HAND as he enters from the left.
         carrying(ReturnPeek, 700, -200),
         carrying(ReturnSide, 700, -125),
