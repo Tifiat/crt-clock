@@ -211,6 +211,27 @@ int main() {
     }
     require(leftStep && rightStep && gift && farAway && vanished && returnsFront,
             "idle story must depart, disappear, return facing front and show gift");
+
+    pet::Animator walkingPreview;
+    walkingPreview.setAutonomousSpeed(146, 0);
+    walkingPreview.previewIdle(pet::IdleAction::Patrol, 0);
+    double farthestLeft = 0, farthestRight = 0;
+    bool turned = false;
+    int movingTicks = 0;
+    for (int t = 40; t <= 12000; t += 40) {
+        const bool dirty = walkingPreview.advance(t, false, false);
+        const auto motion = walkingPreview.motionVisual(t);
+        farthestLeft = std::min(farthestLeft, motion.offsetX);
+        farthestRight = std::max(farthestRight, motion.offsetX);
+        turned |= motion.mirror;
+        if (std::abs(motion.offsetX) > 1 && !walkingPreview.idleResting()) {
+            ++movingTicks;
+            require(dirty, "animated whole-pet movement needs an actual repaint");
+        }
+    }
+    require(farthestLeft < -110 && farthestRight > 145 && turned &&
+            movingTicks > 20,
+            "Patrol must cross left/right edges smoothly and turn mirrored at 146%");
     // Every gift has its own complete ending. Explosion branches alternate
     // falling tears from different eyes, then pass through anger/recovery.
     for (int kind = 0; kind < pet::kGiftKindCount; ++kind) {
