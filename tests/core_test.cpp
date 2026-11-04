@@ -270,6 +270,24 @@ int main() {
                      "pulse gift should stay happy");
     }
 
+    // Gesture tempo and the duration of readable facial expressions
+    // must be independent: at 146% the limbs stay quick but sleepy
+    // eyes remain closed and side glances stay visible.
+    const auto sleepy = pet::idleStory(pet::IdleAction::Sleepy);
+    require(pet::duration(sleepy) >= 9000 &&
+            sleepy[1].absoluteDuration && sleepy[1].durationMs >= 3200,
+            "sleeping must be visibly long even at high animation speed");
+    const auto peek = pet::idleStory(pet::IdleAction::Peek);
+    require(peek[1].absoluteDuration && peek[3].absoluteDuration &&
+            peek[1].durationMs >= 1400,
+            "side glance should be held instead of flickering");
+    const auto shy = pet::idleStory(pet::IdleAction::Shy);
+    require(shy[1].absoluteDuration && shy[3].absoluteDuration &&
+            shy[1].durationMs >= 1600,
+            "shy eyes should linger before returning to neutral");
+    require(pet::frame(pet::SadCry).line == QStringLiteral("(づ｡•﹏﹏•｡)づ"),
+            "crying uses dots rather than semicolons obscuring drawn tears");
+
     // 0 is slow, 100 is fast. Static scanlines do not use this duration.
     require(perspective::sweepDurationMs(0) == 5000, "slow sweep");
     require(perspective::sweepDurationMs(55) == 2525, "default sweep");
