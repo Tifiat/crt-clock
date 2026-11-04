@@ -129,7 +129,9 @@ inline Pose frame(int id) {
         case AwayReturn:
             // Authored rear-facing departure/return. B00-B02 remain
             // exclusively the historic music tail-wag poses.
-            p.line = QStringLiteral("ᕦ(   ◦   )ᕤ");
+            // No central dot pretending to be a tail. A coherent curving
+            // tail and tip are rendered geometrically in pet_render.hpp.
+            p.line = QStringLiteral("ᕦ(       )ᕤ");
             p.back = true;
             if (id == AwayNear || id == AwayReturn) {
                 p.retreatScale = 0.80;
@@ -177,7 +179,9 @@ inline Pose frame(int id) {
             p.mouthDy = 5;
             break;
         case SadCry:
-            p.line = QStringLiteral("(づ｡;﹏﹏;｡)づ");
+            // Tears are drawn independently; semicolons looked like the
+            // dripping tears themselves and obscured their motion.
+            p.line = QStringLiteral("(づ｡•﹏﹏•｡)づ");
             p.eyeDy = -4;
             p.mouthDy = 5;
             break;
