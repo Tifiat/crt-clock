@@ -209,7 +209,7 @@ void centered(QPainter &p, QRectF r, const QString &text, const QFont &font, QCo
 }
 
 QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
-                  const pet::JoyTail &tail, int musicNotePhase) {
+                  const pet::JoyTail &tail, int musicNotePhase, int idleAmbientPhase) {
     QImage glyphs(W, H, QImage::Format_ARGB32_Premultiplied);
     glyphs.fill(Qt::transparent);
     QPainter text(&glyphs);
@@ -235,10 +235,17 @@ QImage drawCanvas(const Settings &cfg, int pose, double clockIntensity,
              QLocale(QLocale::English).toString(now.date(), "ddd, dd MMM yyyy").toUpper(),
              date, dateColor);
     const QRectF petArea(10, 217, 460, 82);
+    const bool stockPet = cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ");
+    text.save();
+    if (stockPet && idleAmbientPhase >= 0)
+        text.translate(0, idleAmbientPhase == 2 ? -1 : (idleAmbientPhase == 5 ? 1 : 0));
     pet::paint(text, petArea, cfg.petFont,
                cfg.pet, pose, petColor, cfg.petFontSize, cfg.petStroke, tail);
-    if (cfg.pet == QStringLiteral("(づ｡◕‿‿◕｡)づ"))
+    text.restore();
+    if (stockPet) {
+        pet::paintIdleMarks(text, petArea, petColor, idleAmbientPhase);
         pet::paintMusicNotes(text, petArea, petColor, musicNotePhase);
+    }
     text.end();
 
     // Final scanlines are drawn AFTER perspective mapping, at screen scale.
@@ -316,6 +323,14 @@ public:
             ? int(((now * cfg_.petAnimationSpeed / 100) / 220) % 8) : -1;
         if (nextNotePhase != musicNotePhase_) {
             musicNotePhase_ = nextNotePhase;
+            dirty = true;
+        }
+        // Continuous subtle idle motion is active ONLY between idle stories.
+        // Fast typing and music must never inherit these motion marks.
+        const int nextAmbientPhase = animator_.idleResting()
+            ? int(((now * cfg_.petAnimationSpeed / 100) / 380) % 6) : -1;
+        if (nextAmbientPhase != idleAmbientPhase_) {
+            idleAmbientPhase_ = nextAmbientPhase;
             dirty = true;
         }
         const quint64 count = keyboard_->pressCount();
@@ -752,7 +767,7 @@ private:
     }
     void redraw() {
         frame_ = drawCanvas(cfg_, animator_.pose(), clockIntensity_, joyTail_,
-                            musicNotePhase_);
+                            musicNotePhase_, idleAmbientPhase_);
         if (matrix_.active()) rebuildMatrix();
         update();
     }
@@ -815,6 +830,7 @@ private:
     QString lastMinute_;
     bool musicPlaying_ = false;
     int musicNotePhase_ = -1;
+    int idleAmbientPhase_ = -1;
     QDialog *settingsWindow_ = nullptr;
     bool editing_ = false;
 };
