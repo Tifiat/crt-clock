@@ -31,7 +31,7 @@ constexpr int kMaxAutonomousSpeed = 180;
 struct Frame {
     int pose;
     int durationMs;
-    GiftCue cue = GiftCue::None;
+    GiftCue cue = GiftCue::Inactive;
 };
 using Story = QVector<Frame>;
 
@@ -305,7 +305,7 @@ public:
         lastPose_ = pose_;
         // Dynamic vector effects advance every 40ms, independently of poses.
         return changed || (activity_ == Activity::Idle && !story_.isEmpty() &&
-                           story_[frameIndex_].cue != GiftCue::None);
+                           story_[frameIndex_].cue != GiftCue::Inactive);
     }
 
     [[nodiscard]] int pose() const { return pose_; }
@@ -322,12 +322,12 @@ public:
         if (pose == AwayGone || (pose >= AwayFace && pose <= AwayReturn) ||
             (pose >= ReturnPeek && pose <= ReturnCenter) ||
             pose == IdleStepLeft || pose == IdleStepRight) return false;
-        return story_[frameIndex_].cue == GiftCue::None;
+        return story_[frameIndex_].cue == GiftCue::Inactive;
     }
     [[nodiscard]] GiftVisual giftVisual(qint64 nowMs) const {
         if (activity_ != Activity::Idle || story_.isEmpty()) return {};
         const Frame &frame = story_[frameIndex_];
-        if (frame.cue == GiftCue::None) return {};
+        if (frame.cue == GiftCue::Inactive) return {};
         const int ms = frameDuration(frame.durationMs);
         return {frame.cue, giftKind_,
                 std::clamp(double(nowMs - frameStartMs_) / ms, 0.0, 1.0)};
