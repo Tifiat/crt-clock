@@ -274,3 +274,7 @@ The opt-in profiler adds `lastWarpPixels` and `mappedWarpPixels`, allowing
 comparison between incremental updates and the full mapping. CI checks exact
 image equality for partial notes, Matrix changes, clearing Matrix, and
 recalibration. Actual CPU savings still need measurement on the Arch laptop.
+
+Idle breathing preserves its six-phase timing and ±1px positions, but
+transitions between identical 0px positions no longer cause redundant
+full-frame renders.

@@ -250,6 +250,12 @@ int main(int argc, char **argv) {
     require(farthestLeft < -110 && farthestRight > 145 && turned &&
             movingTicks > 20,
             "Patrol must cross left/right edges smoothly and turn mirrored at 146%");
+    require(pet::breathOffset(-1) == 0 && pet::breathOffset(0) == 0 &&
+            pet::breathOffset(1) == 0 && pet::breathOffset(2) == -1 &&
+            pet::breathOffset(3) == 0 && pet::breathOffset(4) == 0 &&
+            pet::breathOffset(5) == 1,
+            "breathing must preserve six-step cadence and visible offsets");
+
     // Every gift has its own complete ending. Explosion branches alternate
     // falling tears from different eyes, then pass through anger/recovery.
     for (int kind = 0; kind < pet::kGiftKindCount; ++kind) {

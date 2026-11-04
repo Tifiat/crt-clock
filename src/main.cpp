@@ -284,8 +284,7 @@ public:
         // position/mirror/vertical-breath transform changes between ticks.
         if (!stockPet || !pet::frame(pose).hidden) {
             text.save();
-            const int breath = stockPet && idleBreathPhase >= 0 ?
-                (idleBreathPhase == 2 ? -1 : (idleBreathPhase == 5 ? 1 : 0)) : 0;
+            const int breath = stockPet ? pet::breathOffset(idleBreathPhase) : 0;
             // The historic IdleStep poses contain a +/-9px body offset.
             // That was fine for stepping in place, but caused ~18px
             // teleports whenever the walk exchanged left/right feet.
@@ -449,10 +448,12 @@ public:
         // No idle stripes: thin trails are reserved for flying/exploding gifts.
         const int nextBreathPhase = animator_.idleBreathing()
             ? int(((now * qint64(cfg_.petAnimationSpeed) / 100) / 380) % 6) : -1;
-        if (nextBreathPhase != idleBreathPhase_) {
-            idleBreathPhase_ = nextBreathPhase;
+        // Phases 0, 1, 3 and 4 have the same 0px position. Keep the
+        // six-step timing, but skip the two invisible repaint transitions.
+        if (pet::breathOffset(nextBreathPhase) !=
+            pet::breathOffset(idleBreathPhase_))
             dirty = true;
-        }
+        idleBreathPhase_ = nextBreathPhase;
         const quint64 count = keyboard_->pressCount();
         if (count > keyPressCount_) {
             // Each detected press creates one decorative glyph, not the typed

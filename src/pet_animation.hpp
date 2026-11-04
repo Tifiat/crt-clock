@@ -30,6 +30,12 @@ constexpr int kDefaultAutonomousSpeed = 100;
 constexpr int kMinAutonomousSpeed = 50;
 constexpr int kMaxAutonomousSpeed = 180;
 
+// Breathing only changes position at phases 2 and 5. The other phases
+// have the same visible position and should not trigger duplicate paints.
+constexpr int breathOffset(int phase) {
+    return phase == 2 ? -1 : phase == 5 ? 1 : 0;
+}
+
 struct Frame {
     int pose;
     int durationMs;
